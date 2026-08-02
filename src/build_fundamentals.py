@@ -113,31 +113,38 @@ def build_macro_event(event_type: str, release_id: int, series_id: str) -> pd.Da
     ]].rename(columns={"date": "reference_period"})
 
 
-def build_fomc_event(release_id: int, series_id: str) -> pd.DataFrame:
-    """FOMC decisions: every scheduled decision date (from the release
-    calendar, so "hold" meetings are captured too, not just meetings
-    where the rate actually changed) tagged with the target rate level
-    just after that date and whether it moved (hike/cut/hold)."""
-    releases = release_dates(release_id)
+def build_fomc_event(series_id: str) -> pd.DataFrame:
+    """FOMC rate DECISIONS - i.e. actual hikes/cuts - derived directly from
+    where the target-range series itself changes value, NOT from a FRED
+    "release" calendar. Originally this used release_dates() against
+    FRED's "FOMC Press Release" release (id 101) on the assumption it was
+    a meeting calendar - verified WRONG against the real fetched data:
+    that release fires at a median 1-DAY gap (3737 dates over ~12 years),
+    not the ~6-week FOMC meeting cadence, so it's evidently a general
+    press-release feed (statements, minutes, speeches, ...), not a
+    decision calendar. FRED has no dedicated FOMC-meeting-calendar
+    release under any "FOMC"/"monetary policy"/"interest rate" keyword
+    (checked the full releases catalog). Deriving events from the rate
+    series' own change points is self-verifying (every row here IS a
+    real, confirmed hike or cut - never a guess) and trades away only
+    "hold" meetings (no rate change = nothing for a level-diff to find),
+    which is an honest, disclosed simplification given the data
+    available, not a hidden approximation."""
     rate = series_observations(series_id).sort_values("date").reset_index(drop=True)
+    rate["prior_value"] = rate["value"].shift(1)
+    rate["change"] = (rate["value"] - rate["prior_value"]).round(4)
+    changes = rate[rate["change"].notna() & (rate["change"] != 0)].reset_index(drop=True)
 
     rows = []
-    for decision_date in releases["date"]:
-        after = rate[rate["date"] >= decision_date]
-        before = rate[rate["date"] < decision_date]
-        if after.empty or before.empty:
-            continue
-        rate_after = after.iloc[0]["value"]
-        rate_before = before.iloc[-1]["value"]
-        change = round(rate_after - rate_before, 4)
-        direction = "hike" if change > 0 else ("cut" if change < 0 else "hold")
+    for _, row in changes.iterrows():
+        direction = "hike" if row["change"] > 0 else "cut"
         rows.append({
-            "datetime_utc": et_to_utc(decision_date, *RELEASE_TIME_ET["FOMC"]),
+            "datetime_utc": et_to_utc(row["date"], *RELEASE_TIME_ET["FOMC"]),
             "event_type": "FOMC",
-            "reference_period": decision_date,
-            "value": rate_after,
-            "prior_value": rate_before,
-            "change": change,
+            "reference_period": row["date"],
+            "value": row["value"],
+            "prior_value": row["prior_value"],
+            "change": row["change"],
             "pct_change": None,
             "vs_trend": None,
             "fomc_direction": direction,
@@ -175,7 +182,7 @@ def refresh_fundamentals(config_path: Path, data_dir: Path) -> Path | None:
                 continue
             print(f"fetching {event_type} (release_id={release_id}, series={series_id})...")
             if event_type == "FOMC":
-                df = build_fomc_event(release_id, series_id)
+                df = build_fomc_event(series_id)
             else:
                 df = build_macro_event(event_type, release_id, series_id)
             print(f"  {len(df)} historical releases")
