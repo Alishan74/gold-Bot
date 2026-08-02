@@ -716,10 +716,44 @@ def train_all(symbol: str, candles_dir: Path, registry_dir: Path, n_splits: int 
         # place for the genuinely-different case of a feature with real
         # values LATER in history, just not yet in an early fold.
         dead_cols = features.columns[features.isna().all(axis=0)]
+
+        # A feature can ALSO be useless for training even when it isn't
+        # 100% NaN overall - the real-world case that motivated this:
+        # ask_bid_volume_imbalance was 100% NaN except for a short TAIL
+        # of the most recently re-fetched history (a resumed/chunked
+        # backfill only recently started populating order-flow columns
+        # reliably - earlier chunks predate that and were never
+        # rewritten). Every purged walk-forward fold's training window
+        # ends strictly BEFORE its own validation block, so a column
+        # whose only real values sit in that trailing region can never
+        # appear in ANY fold's training data no matter how many folds
+        # or how much history exists elsewhere - it's exactly as dead as
+        # the 100%-NaN case above for training purposes, the plain
+        # isna().all() check above just can't see it because some rows
+        # really aren't NaN. Checked directly here against the LARGEST
+        # training window this timeframe will ever offer (the final
+        # fold's - purged_walk_forward_splits is walked to its last
+        # yield, reusing the exact same split logic training itself
+        # uses below, not an approximation of it) - a column dead there
+        # is dead everywhere training could ever use it.
+        last_fold_train_idx = None
+        for train_idx, _ in purged_walk_forward_splits(len(candles), label_window(),
+                                                         n_splits=n_splits, embargo=EMBARGO_CANDLES):
+            last_fold_train_idx = train_idx
+        if last_fold_train_idx is not None and len(last_fold_train_idx) > 0:
+            still_alive = features.columns.difference(dead_cols)
+            tail_only_cols = still_alive[features.loc[last_fold_train_idx, still_alive].isna().all(axis=0)]
+            if len(tail_only_cols) > 0:
+                print(f"  {tf}: dropping {len(tail_only_cols)} feature(s) with real values ONLY in a "
+                      f"trailing region that can never appear in any fold's training window (e.g. a "
+                      f"resumed backfill that only recently started populating this column) - "
+                      f"{list(tail_only_cols)}")
+                dead_cols = dead_cols.union(tail_only_cols)
+
         if len(dead_cols) > 0:
             print(f"  {tf}: dropping {len(dead_cols)} feature(s) entirely missing across this timeframe's "
-                  f"WHOLE history (likely a data source never backfilled for it, e.g. order flow) - "
-                  f"{list(dead_cols)}")
+                  f"WHOLE history or its largest available training window (likely a data source never "
+                  f"backfilled for it, e.g. order flow) - {list(dead_cols)}")
             features = features.drop(columns=dead_cols)
 
         atr_series = _atr(candles)
