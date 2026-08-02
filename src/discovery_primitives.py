@@ -326,6 +326,37 @@ for _event_type in ("CPI", "PCE", "NFP", "GDP"):
                     (_surprise_zscore_on_candles(df, ev, et) < -z).fillna(False)))
 
 
+# ---- seasonality family --------------------------------------------------------
+# Calendar-based, not lunar-precise (Diwali/Chinese New Year drift ~3-6
+# weeks year to year on the Gregorian calendar - pinning an exact date
+# window would need a lunar-calendar lookup table this codebase doesn't
+# have) - deliberately simple, deterministic, and independent of any
+# assumption about which months are actually favorable: registers one
+# primitive per calendar month (direction_hint=0, same as session_*
+# primitives) plus the two broad windows real-world gold seasonality
+# research repeatedly documents (India's Oct-Nov wedding season/Dhanteras/
+# Diwali physical demand, and the wider Nov-Feb window where that overlaps
+# Chinese New Year buying) - the search finds out empirically whether
+# THIS dataset actually shows the effect, rather than the primitive
+# itself asserting a direction.
+
+def _month_is(candles: pd.DataFrame, month: int) -> pd.Series:
+    return pd.to_datetime(candles["timestamp"]).dt.month == month
+
+def _month_in(candles: pd.DataFrame, months: set[int]) -> pd.Series:
+    return pd.to_datetime(candles["timestamp"]).dt.month.isin(months)
+
+
+for _month in range(1, 13):
+    _register(f"seasonality_month_{_month}", "seasonality", 0,
+              (lambda df, ev, m=_month: _month_is(df, m)))
+
+_register("seasonality_diwali_window", "seasonality", 0,
+          (lambda df, ev: _month_in(df, {10, 11})))
+_register("seasonality_golden_window", "seasonality", 0,
+          (lambda df, ev: _month_in(df, {11, 12, 1, 2})))
+
+
 # ---- session family -----------------------------------------------------------
 
 def _session_active(candles: pd.DataFrame, name: str) -> pd.Series:
