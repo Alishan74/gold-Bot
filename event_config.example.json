@@ -1,0 +1,8 @@
+{
+  "_comment": "Copy this to event_config.json and fill in release_id for each event after running src/discover_release_ids.py. release_id is required (null = not yet confirmed, will be skipped). series_id defaults shown are standard FRED tickers.",
+  "CPI":  { "release_id": null, "series_id": "CPIAUCSL" },
+  "PCE":  { "release_id": null, "series_id": "PCEPI" },
+  "NFP":  { "release_id": null, "series_id": "PAYEMS" },
+  "GDP":  { "release_id": null, "series_id": "GDPC1" },
+  "FOMC": { "release_id": null, "series_id": "DFEDTARU" }
+}

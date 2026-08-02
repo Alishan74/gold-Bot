@@ -1,0 +1,11 @@
+data/raw_bi5/
+data/candles/*.parquet
+data/events/*.parquet
+data/context/*.parquet
+data/heartbeats.json
+data/heartbeats.json.lock
+data/signal_journal.parquet
+pattern_library/*.json
+event_config.json
+__pycache__/
+*.pyc

@@ -1,0 +1,2201 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gold Signals — Control Room</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --page:        #0d0d0d;
+    --surface:     #1a1a19;
+    --surface-2:   #212120;
+    --ink:         #ffffff;
+    --ink-2:       #c3c2b7;
+    --ink-muted:   #898781;
+    --grid:        #2c2c2a;
+    --border:      rgba(255,255,255,0.10);
+    --border-2:    rgba(255,255,255,0.16);
+
+    --gold:        #c98500;    /* categorical slot 4, dark step — brand accent, not status */
+    --gold-soft:   rgba(201,133,0,0.14);
+    --blue:        #3987e5;    /* categorical slot 1 */
+    --violet:      #9b7fe8;    /* categorical slot 6 (support/resistance) - NOT a status color,
+                                   deliberately distinct from --critical/--warning/--good so a
+                                   support_resistance badge is never misread as good/bad/caution */
+    --violet-soft: rgba(155,127,232,0.14);
+    --teal:        #2bb3a3;    /* categorical slot 7 (discovered / self-learned patterns) - also NOT
+                                   a status color, deliberately distinct from every other category so
+                                   a discovered__ pattern reads as "its own category", not a variant
+                                   of technical/combo */
+    --teal-soft:   rgba(43,179,163,0.14);
+    --rose:        #e0679b;    /* categorical slot 8 (smc: liquidity sweeps / fair value gaps) - also
+                                   NOT a status color, deliberately distinct from every other category
+                                   (including --violet's support_resistance) so an smc_ pattern reads
+                                   as its own category rather than a variant of support_resistance */
+    --rose-soft:   rgba(224,103,155,0.14);
+
+    --good:        #0ca30c;
+    --good-soft:   rgba(12,163,12,0.14);
+    --warning:     #fab219;
+    --warning-soft:rgba(250,178,25,0.14);
+    --critical:    #e66767;
+    --critical-soft:rgba(230,103,103,0.14);
+    --muted-soft:  rgba(137,135,129,0.14);
+
+    --radius: 14px;
+    --radius-sm: 9px;
+    font-variant-numeric: proportional-nums;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 24px 28px 64px; }
+
+  /* ---- top bar ---- */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 4px 0 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 24px;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand-mark {
+    width: 34px; height: 34px; border-radius: 9px;
+    background: linear-gradient(145deg, var(--gold), #7a5200);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; color: #1a1200; font-size: 15px;
+  }
+  .brand-text h1 { font-size: 16px; margin: 0; letter-spacing: .2px; }
+  .brand-text .sub { font-size: 12px; color: var(--ink-muted); }
+  .topbar-right { display: flex; align-items: center; gap: 18px; }
+  .clock { font-size: 12px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+  .system-status {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 12px; padding: 6px 12px; border-radius: 999px;
+    border: 1px solid var(--border-2); background: var(--surface);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .dot.good { background: var(--good); box-shadow: 0 0 8px rgba(12,163,12,.7); }
+  .dot.warning { background: var(--warning); box-shadow: 0 0 8px rgba(250,178,25,.6); }
+  .dot.critical { background: var(--critical); box-shadow: 0 0 8px rgba(230,103,103,.6); }
+  .dot.muted { background: var(--ink-muted); }
+
+  /* ---- layout ---- */
+  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+  .col-3 { grid-column: span 3; }
+  .col-4 { grid-column: span 4; }
+  .col-6 { grid-column: span 6; }
+  .col-8 { grid-column: span 8; }
+  .col-12 { grid-column: span 12; }
+  @media (max-width: 980px) {
+    .col-4, .col-6, .col-8, .col-12 { grid-column: span 12; }
+    .col-3 { grid-column: span 6; }
+  }
+  @media (max-width: 560px) {
+    .col-3 { grid-column: span 12; }
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+  }
+  .card-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .card-title {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--ink-muted); font-weight: 600;
+  }
+  .card-title .n { color: var(--ink-2); font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+  /* ---- hero signal card ---- */
+  .hero {
+    display: grid; grid-template-columns: auto 1fr auto; gap: 24px; align-items: center;
+  }
+  .hero-direction {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+    min-width: 150px;
+  }
+  .direction-badge {
+    font-size: 30px; font-weight: 800; letter-spacing: .01em;
+    padding: 6px 0;
+  }
+  .direction-badge.BUY { color: var(--good); }
+  .direction-badge.SELL { color: var(--critical); }
+  .direction-badge.HOLD, .direction-badge.UNAVAILABLE, .direction-badge.ERROR { color: var(--ink-muted); }
+  .confidence-label { font-size: 12px; color: var(--ink-muted); }
+  .confidence-bar { width: 150px; height: 6px; border-radius: 4px; background: var(--surface-2); overflow: hidden; margin-top: 4px; }
+  .confidence-fill { height: 100%; border-radius: 4px; background: var(--gold); }
+
+  .trade-plan { display: flex; gap: 26px; flex-wrap: wrap; }
+  .tp-item { display: flex; flex-direction: column; gap: 3px; }
+  .tp-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-muted); }
+  .tp-value { font-size: 18px; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .tp-value.stop { color: var(--critical); }
+  .tp-value.target { color: var(--good); }
+  .rr-chip {
+    font-size: 11px; padding: 3px 9px; border-radius: 999px;
+    background: var(--gold-soft); color: var(--gold); border: 1px solid rgba(201,133,0,.35);
+    font-weight: 600; white-space: nowrap;
+  }
+
+  .rr-bar { width: 100%; height: 10px; border-radius: 5px; overflow: hidden; display: flex; margin-top: 10px; background: var(--surface-2); }
+  .rr-bar .risk { background: var(--critical); }
+  .rr-bar .reward { background: var(--good); }
+
+  .freshness-badge {
+    font-size: 10.5px; padding: 3px 9px; border-radius: 999px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .05em; margin-top: 8px; display: inline-block;
+  }
+  .freshness-badge.FRESH { background: var(--good-soft); color: var(--good); }
+  .freshness-badge.AGING { background: var(--warning-soft); color: var(--warning); }
+  .freshness-badge.EXPIRED { background: var(--critical-soft); color: var(--critical); }
+
+  .credibility-badge {
+    font-size: 10.5px; padding: 3px 9px; border-radius: 999px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .05em; display: inline-block;
+  }
+  .credibility-badge.CONFIRMED { background: var(--good-soft); color: var(--good); }
+  .credibility-badge.WATCH { background: var(--warning-soft); color: var(--warning); }
+  .credibility-badge.DECAYING { background: var(--critical-soft); color: var(--critical); }
+  .credibility-badge.UNPROVEN { background: var(--muted-soft); color: var(--ink-muted); }
+
+  .perf-tiles { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 16px; }
+  @media (max-width: 900px) { .perf-tiles { grid-template-columns: repeat(2, 1fr); } }
+  .perf-tile { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .perf-tile .v { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .perf-tile .l { font-size: 10.5px; color: var(--ink-muted); text-transform: uppercase; letter-spacing: .04em; margin-top: 2px; }
+  .perf-tile .v.good { color: var(--good); }
+  .perf-tile .v.critical { color: var(--critical); }
+
+  .news-box {
+    margin-top: 14px; padding: 12px 14px; border-radius: var(--radius-sm);
+    border: 1px solid rgba(250,178,25,.35); background: var(--warning-soft);
+    font-size: 12.5px; color: var(--ink-2);
+  }
+  .news-box.clear { border-color: var(--border-2); background: var(--surface-2); }
+  .news-box .news-head { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--warning); margin-bottom: 6px; font-size: 12px; }
+  .news-box.clear .news-head { color: var(--ink-muted); }
+  .news-box .news-perf { display: flex; gap: 22px; margin-top: 8px; flex-wrap: wrap; }
+  .news-box .np-item .np-label { font-size: 10.5px; color: var(--ink-muted); text-transform: uppercase; letter-spacing: .05em; }
+  .news-box .np-item .np-value { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .cb-banner {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    margin-bottom: 16px; padding: 14px 18px; border-radius: var(--radius-sm);
+    border: 1px solid var(--critical); background: var(--critical-soft);
+  }
+  .cb-banner .cb-title { font-weight: 800; color: var(--critical); font-size: 13px; letter-spacing: .02em; }
+  .cb-banner .cb-reasons { color: var(--ink-2); font-size: 12.5px; }
+  .cb-banner .cb-metrics { display: flex; gap: 18px; margin-left: auto; }
+  .cb-banner .cb-m-label { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-muted); }
+  .cb-banner .cb-m-value { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .journal-status { font-size: 10.5px; padding: 2px 8px; border-radius: 999px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+  .journal-status.open { background: rgba(57,135,229,.16); color: var(--blue); }
+  .journal-status.win { background: var(--good-soft); color: var(--good); }
+  .journal-status.loss { background: var(--critical-soft); color: var(--critical); }
+  .journal-status.expired { background: var(--muted-soft); color: var(--ink-muted); }
+
+  /* ---- stat tiles ---- */
+  .stat-tile .value { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat-tile .label { font-size: 11.5px; color: var(--ink-muted); margin-top: 4px; }
+  .stat-tile .delta { font-size: 11.5px; margin-top: 6px; color: var(--ink-2); }
+
+  /* ---- pulse ---- */
+  .pulse-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 0; border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .pulse-row:last-child { border-bottom: none; }
+  .pulse-job { display: flex; align-items: center; gap: 10px; }
+  .pulse-job-name { font-weight: 600; }
+  .pulse-meta { color: var(--ink-muted); font-size: 12px; text-align: right; }
+  .pulse-badge {
+    font-size: 10.5px; padding: 2px 8px; border-radius: 999px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .04em;
+  }
+  .pulse-badge.ok { background: var(--good-soft); color: var(--good); }
+  .pulse-badge.running { background: rgba(57,135,229,.16); color: var(--blue); }
+  .pulse-badge.error { background: var(--critical-soft); color: var(--critical); }
+  .pulse-badge.skipped, .pulse-badge.never { background: var(--muted-soft); color: var(--ink-muted); }
+
+  /* ---- tables ---- */
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th {
+    text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--ink-muted); font-weight: 600; padding: 0 10px 8px; border-bottom: 1px solid var(--border-2);
+  }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+  tr:last-child td { border-bottom: none; }
+  td.name { font-variant-numeric: normal; font-weight: 500; }
+  .badge-cat {
+    font-size: 10px; padding: 1px 7px; border-radius: 999px; margin-left: 8px;
+    text-transform: uppercase; letter-spacing: .03em; font-weight: 600;
+  }
+  .badge-cat.technical { background: rgba(57,135,229,.14); color: var(--blue); }
+  .badge-cat.fundamental { background: var(--gold-soft); color: var(--gold); }
+  .badge-cat.session { background: var(--muted-soft); color: var(--ink-muted); }
+  .badge-cat.combo { background: var(--warning-soft); color: var(--warning); }
+  .badge-cat.ml { background: var(--good-soft); color: var(--good); }
+  .badge-cat.support_resistance { background: var(--violet-soft); color: var(--violet); }
+  .badge-cat.discovered { background: var(--teal-soft); color: var(--teal); }
+  .badge-cat.smc { background: var(--rose-soft); color: var(--rose); }
+  .dir-pill { font-size: 11px; font-weight: 600; }
+  .dir-pill.bullish { color: var(--good); }
+  .dir-pill.bearish { color: var(--critical); }
+
+  .meter-track { width: 90px; height: 6px; border-radius: 4px; background: var(--surface-2); overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 8px; }
+  .meter-fill { display: block; height: 100%; border-radius: 4px; }
+  .meter-fill.pass { background: var(--good); }
+  .meter-fill.fail { background: var(--ink-muted); }
+  .qualify-tick { font-weight: 700; }
+  .qualify-tick.yes { color: var(--good); }
+  .qualify-tick.no { color: var(--ink-muted); }
+
+  .tf-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tf-tab {
+    font-size: 11.5px; padding: 5px 11px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--border-2); background: transparent; color: var(--ink-2);
+  }
+  .tf-tab.active { background: var(--gold-soft); color: var(--gold); border-color: rgba(201,133,0,.4); }
+
+  .toolbar {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+    gap: 10px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+  }
+  .filter-group { display: flex; gap: 6px; align-items: center; }
+  .filter-group .glabel { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-muted); margin-right: 4px; }
+  .chip-toggle {
+    font-size: 11px; padding: 4px 10px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--border-2); background: transparent; color: var(--ink-2);
+  }
+  .chip-toggle.active { background: rgba(57,135,229,.16); color: var(--blue); border-color: rgba(57,135,229,.4); }
+  .switch-row { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--ink-2); cursor: pointer; user-select: none; }
+  .switch-row input { accent-color: var(--gold); width: 13px; height: 13px; }
+  .table-scroll { max-height: 460px; overflow-y: auto; overflow-x: auto; }
+  .tbl-wrap { width: 100%; overflow-x: auto; }
+  .table-scroll thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+
+  /* ---- sparkline ---- */
+  .spark-wrap { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 6px; }
+  .spark-price { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .spark-freshness { font-size: 11px; color: var(--ink-muted); }
+  svg.spark { width: 100%; height: 64px; display: block; }
+
+  /* ---- controls / console ---- */
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  button.action-btn {
+    font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+    padding: 9px 16px; border-radius: var(--radius-sm);
+    background: var(--surface-2); color: var(--ink); border: 1px solid var(--border-2);
+  }
+  button.action-btn:hover { border-color: var(--gold); color: var(--gold); }
+  button.action-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .console {
+    background: #050505; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 12px 14px; height: 200px; overflow-y: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
+    color: var(--ink-2); line-height: 1.6;
+  }
+  .console .line.err { color: var(--critical); }
+  .console .empty { color: var(--ink-muted); }
+
+  .empty-state { color: var(--ink-muted); font-size: 12.5px; padding: 20px 0; text-align: center; }
+  .section-gap { margin-top: 22px; }
+  .foot-note { font-size: 11px; color: var(--ink-muted); margin-top: 28px; text-align: center; }
+
+  /* ---- top-level page tabs (Overview / Pattern Discovery) ---- */
+  .top-tabs { display: flex; gap: 8px; margin: 16px 0 4px; }
+  .top-tab {
+    font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+    padding: 9px 18px; border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    background: transparent; color: var(--ink-muted); border: 1px solid transparent;
+    border-bottom: 2px solid transparent;
+  }
+  .top-tab:hover { color: var(--ink-2); }
+  .top-tab.active { color: var(--teal); border-bottom-color: var(--teal); background: var(--teal-soft); }
+  .top-tab .badge-cat { margin-left: 6px; }
+
+  /* ---- Pattern Discovery summary card (Overview tab) ---- */
+  .discovery-summary-card { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; }
+  .discovery-summary-stats { display: flex; gap: 28px; flex-wrap: wrap; }
+  .discovery-summary-stats .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--teal); }
+  .discovery-summary-stats .l { font-size: 11px; color: var(--ink-muted); margin-top: 2px; }
+  .discovery-view-btn {
+    font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+    padding: 8px 16px; border-radius: var(--radius-sm);
+    background: var(--teal-soft); color: var(--teal); border: 1px solid rgba(43,179,163,.4);
+  }
+  .discovery-view-btn:hover { background: rgba(43,179,163,.24); }
+
+  /* ---- discovery pattern provenance (Patterns sub-view) ---- */
+  .primitive-chip {
+    display: inline-block; font-size: 10.5px; padding: 2px 7px; border-radius: 999px;
+    background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--border-2);
+    margin: 1px 3px 1px 0;
+  }
+  /* A primitive Layer 0 (discovery_synthesis.py) composed itself, from raw
+     OHLCV - no human chose this specific expression. Same --teal accent
+     as the "discovered" category badge, so "self-learned all the way
+     down" reads as one visual family, not two unrelated colors. */
+  .primitive-chip.synth { background: var(--teal-soft); color: var(--teal); border-color: rgba(43,179,163,.4); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">Au</div>
+      <div class="brand-text">
+        <h1>Gold Signals — Control Room</h1>
+        <div class="sub" id="symbol-sub">XAUUSD · fixed 1:4 R:R · 60% win-rate gate</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="clock" id="clock">—</div>
+      <div class="system-status" id="system-status"><span class="dot muted"></span><span>checking…</span></div>
+    </div>
+  </div>
+
+  <div class="top-tabs" id="top-tabs">
+    <button class="top-tab active" data-top-tab="overview">Overview</button>
+    <button class="top-tab" data-top-tab="discovery" id="discovery-top-tab">Pattern Discovery <span class="badge-cat discovered" id="discovery-top-tab-count"></span></button>
+    <button class="top-tab" data-top-tab="explored" id="explored-top-tab">Explored Setups</button>
+  </div>
+
+<div id="tab-panel-overview">
+
+  <!-- Circuit breaker: portfolio-level hard override, always visible when tripped -->
+  <div id="circuit-breaker-banner" style="display:none;"></div>
+
+  <!-- Hero: signals engine -->
+  <div class="grid">
+    <div class="col-12 card" id="hero-card">
+      <div class="card-head">
+        <div class="card-title">Signals Engine <span class="n" id="signal-tf-note"></span></div>
+        <div class="rr-chip" id="hero-rr-chip">RISK:REWARD 1:4 · WIN RATE ≥ 60%</div>
+      </div>
+      <div id="hero-body">
+        <div class="empty-state">Loading signal…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- R:R tiers: every tier train.py's RR_GRID searches (scalp through
+       swing), each an INDEPENDENT signal - the hero card above shows only
+       the single strongest actionable pick; this shows all of them side
+       by side so a scalp-sized setup and a swing-sized setup off the same
+       market state are both visible, not just whichever wins the pick.
+       Rule-based engine mode has no tier concept (fixed 1:4), so this
+       card only renders anything for ENGINE=="ml" - see server.py's
+       /api/signal/tiers. -->
+  <div class="grid section-gap" id="ml-tiers-row" style="display:none;">
+    <div class="col-12 card">
+      <div class="card-head">
+        <div class="card-title">R:R Tiers <span class="n">— every scalp-through-swing tier scored independently this run, not blended into one composite signal</span></div>
+      </div>
+      <div id="ml-tiers-body"><div class="empty-state">Loading tiers…</div></div>
+    </div>
+  </div>
+
+  <!-- ML Backtest: the FULL walk-forward backtest for each active model
+       version, built from the out-of-fold validation trades train.py
+       persists at training time (ml_system/backtest_report.py) - NOT the
+       live journal's equity curve (that's the Performance tab, starts
+       empty and grows in real time). Click a row to load its equity
+       curve + calibration below. ML challenger only. -->
+  <div class="grid section-gap" id="ml-backtest-row" style="display:none;">
+    <div class="col-12 card">
+      <div class="card-head">
+        <div class="card-title">ML Backtest <span class="n">— full walk-forward out-of-fold history per active model version, click a row for its equity curve + calibration</span></div>
+      </div>
+      <div id="ml-backtest-body"><div class="empty-state">Loading…</div></div>
+      <div id="ml-backtest-detail" style="margin-top:14px;"></div>
+    </div>
+  </div>
+
+  <!-- Event Autopsy: scripts/event_autopsy.py's win/loss factor analysis -
+       "of the times a breakout/rejection/engulfing candle happened, what
+       measurably differed between the ones that worked and the ones that
+       didn't" - an ASSOCIATION, FDR-corrected across every feature tested,
+       never presented as "the reason" a trade won or lost. Read-only,
+       same convention as the Explored Setups tab - only ever shows what
+       the script already wrote to event_autopsy/. -->
+  <div class="grid section-gap" id="event-autopsy-row" style="display:none;">
+    <div class="col-12 card">
+      <div class="card-head">
+        <div class="card-title">Event Autopsy <span class="n">— win vs loss factor differences for breakout/rejection/engulfing events, FDR-corrected, from scripts/event_autopsy.py</span></div>
+      </div>
+      <div id="event-autopsy-body"><div class="empty-state">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- Stat tiles -->
+  <div class="grid section-gap">
+    <div class="col-3 card stat-tile">
+      <div class="value" id="stat-candles">—</div>
+      <div class="label">Total candles stored</div>
+      <div class="delta" id="stat-candles-sub">—</div>
+    </div>
+    <div class="col-3 card stat-tile">
+      <div class="value" id="stat-qualifying">—</div>
+      <div class="label">Qualifying patterns (all timeframes)</div>
+      <div class="delta" id="stat-qualifying-sub">—</div>
+    </div>
+    <div class="col-3 card stat-tile">
+      <div class="value" id="stat-events">—</div>
+      <div class="label">Fundamental events tracked</div>
+      <div class="delta" id="stat-events-sub">—</div>
+    </div>
+    <div class="col-3 card stat-tile">
+      <div class="value" id="stat-freshness">—</div>
+      <div class="label">Freshest candle age</div>
+      <div class="delta" id="stat-freshness-sub">—</div>
+    </div>
+  </div>
+
+  <!-- Pattern Discovery Engine: compact summary + link into its own tab -->
+  <div class="grid section-gap" id="discovery-summary-row">
+    <div class="col-12 card discovery-summary-card">
+      <div class="discovery-summary-stats" id="discovery-summary-stats">
+        <div><div class="v">—</div><div class="l">Loading self-learned patterns…</div></div>
+      </div>
+      <button class="discovery-view-btn" data-top-tab="discovery">View Pattern Discovery →</button>
+    </div>
+  </div>
+
+  <div class="grid section-gap">
+    <!-- Data collection engine pulse + broader system status -->
+    <div class="col-4 card">
+      <div class="card-head"><div class="card-title">Data Collection Engine — Pulse</div></div>
+      <div id="pulse-body"><div class="empty-state">Loading…</div></div>
+      <div id="system-status-detail" style="margin-top:14px;"></div>
+    </div>
+
+    <!-- Data storage -->
+    <div class="col-8 card">
+      <div class="card-head"><div class="card-title">Data Storage</div></div>
+      <div id="storage-body"><div class="empty-state">Loading…</div></div>
+      <div id="data-quality-body" style="margin-top:10px;"></div>
+    </div>
+  </div>
+
+  <div class="grid section-gap">
+    <!-- Full on-disk footprint - everything this system writes, not just
+         candles (see Data Storage above for the per-timeframe breakdown).
+         Fetched on demand, not on the 8s poll - the raw tick cache can be
+         tens of thousands of files, re-globbing that every 8s would be
+         wasted I/O for a number that barely changes minute to minute. -->
+    <div class="col-12 card">
+      <div class="card-head">
+        <div class="card-title">Storage Overview <span class="n" id="files-overview-note"></span></div>
+        <button class="chip-toggle" id="files-overview-refresh" style="cursor:pointer;">↻ Refresh</button>
+      </div>
+      <div id="files-overview-body"><div class="empty-state">Loading…</div></div>
+    </div>
+  </div>
+
+  <div class="grid section-gap">
+    <!-- Realtime data collection -->
+    <div class="col-12 card">
+      <div class="card-head">
+        <div class="card-title">Realtime Data Collection</div>
+        <div class="tf-tabs" id="spark-tabs"></div>
+      </div>
+      <div id="spark-body"><div class="empty-state">Loading…</div></div>
+    </div>
+  </div>
+
+  <div class="grid section-gap">
+    <!-- Patterns being made / patterns data -->
+    <div class="col-8 card">
+      <div class="card-head">
+        <div class="card-title">Patterns Data <span class="n" id="patterns-count-note"></span></div>
+        <div class="tf-tabs" id="pattern-tabs"></div>
+      </div>
+      <div class="toolbar">
+        <div class="filter-group">
+          <span class="glabel">Category</span>
+          <button class="chip-toggle active" data-cat="all">All</button>
+          <button class="chip-toggle" data-cat="technical">Technical</button>
+          <button class="chip-toggle" data-cat="session">Session</button>
+          <button class="chip-toggle" data-cat="fundamental">Fundamental</button>
+          <button class="chip-toggle" data-cat="support_resistance">Support/Resistance</button>
+          <button class="chip-toggle" data-cat="combo">Combo</button>
+          <button class="chip-toggle" data-cat="discovered">Discovered</button>
+        </div>
+        <label class="switch-row"><input type="checkbox" id="qualifying-only" /> Qualifying only</label>
+      </div>
+      <div id="patterns-body"><div class="empty-state">Loading…</div></div>
+    </div>
+
+    <!-- Fundamentals -->
+    <div class="col-4 card">
+      <div class="card-head"><div class="card-title">Fundamentals Feed</div></div>
+      <div id="fundamentals-body"><div class="empty-state">Loading…</div></div>
+    </div>
+  </div>
+
+  <div class="grid section-gap">
+    <!-- Self-assessment: the system grading its own live performance, so
+         you don't have to trade on real money to find out if it works -->
+    <div class="col-12 card">
+      <div class="card-head">
+        <div class="card-title">Self-Assessment — Live Performance &amp; Credibility</div>
+      </div>
+      <div id="performance-body"><div class="empty-state">Loading…</div></div>
+    </div>
+  </div>
+
+  <div class="grid section-gap">
+    <!-- Signal journal: every signal ever emitted, and whether it actually won -->
+    <div class="col-8 card">
+      <div class="card-head">
+        <div class="card-title">Signal Journal <span class="n" id="journal-count-note"></span></div>
+        <a class="chip-toggle" href="/api/journal/export" download style="text-decoration:none;">⬇ Export CSV</a>
+      </div>
+      <div id="journal-body"><div class="empty-state">Loading…</div></div>
+    </div>
+
+    <!-- Upcoming scheduled high-impact news -->
+    <div class="col-4 card">
+      <div class="card-head"><div class="card-title">Upcoming High-Impact News</div></div>
+      <div id="upcoming-news-body"><div class="empty-state">Loading…</div></div>
+    </div>
+  </div>
+
+  <div class="grid section-gap">
+    <div class="col-12 card">
+      <div class="card-head"><div class="card-title">Controls</div></div>
+      <div class="actions">
+        <button class="action-btn" data-action="refresh_live">Refresh Live Data</button>
+        <button class="action-btn" data-action="rebuild_library">Rebuild Pattern Library</button>
+        <button class="action-btn" data-action="discover_patterns" id="discover-patterns-btn">Discover Patterns (self-learn)</button>
+        <button class="action-btn" data-action="refresh_fundamentals">Refresh Fundamentals</button>
+        <button class="action-btn" data-action="refresh_news_calendar">Refresh News Calendar</button>
+      </div>
+      <div class="toolbar" style="margin-top:14px;">
+        <div class="filter-group">
+          <span class="glabel">Import broker data (MT4/5)</span>
+          <input type="text" id="mt-export-dir" placeholder="/path/to/MQL5/Files/gold_export" style="width:260px;background:var(--surface-2);border:1px solid var(--border-2);color:var(--ink);border-radius:6px;padding:4px 6px;font-size:11.5px;">
+          <input type="text" id="mt-symbol" placeholder="XAUUSD.a" style="width:100px;background:var(--surface-2);border:1px solid var(--border-2);color:var(--ink);border-radius:6px;padding:4px 6px;font-size:11.5px;">
+          <button class="action-btn" id="mt-import-btn">Import</button>
+        </div>
+      </div>
+      <div class="delta" style="margin-top:6px;">See mt_bridge/README.md to set up the MT4/5 export + live bridge first.</div>
+      <div class="console" id="console" style="margin-top:14px;"><div class="empty">No job run yet this session.</div></div>
+    </div>
+  </div>
+
+  <div class="foot-note">Auto-refreshing every 8s · reads data/ and pattern_library/ directly off disk · gold-signals-bot</div>
+
+</div><!-- /tab-panel-overview -->
+
+<div id="tab-panel-discovery" style="display:none;">
+
+  <div class="grid section-gap">
+    <div class="col-12 card">
+      <div class="card-head">
+        <div class="card-title">Pattern Discovery Engine <span class="n">— self-learned patterns, built from raw primitives, not a hand-picked catalog</span></div>
+        <div class="rr-chip">RISK:REWARD 1:4 · WIN RATE ≥ 60% · worst-era + FDR + blind confirmation</div>
+      </div>
+      <div class="delta">5-layer pipeline: genetic primitive synthesis → primitives (226, 8+ families, dense parametrized grids) → beam search construction → worst-era/FDR/blind-confirmation/cross-timeframe validation → orchestration. See README.md "Pattern Discovery Engine" for the full methodology. Not wired into the hourly self-heal cron - run it deliberately (Controls panel, Overview tab, or <code>python src/discover_patterns.py</code>) whenever you want to re-mine.</div>
+    </div>
+  </div>
+
+  <!-- Standalone signal: what the self-learned patterns ALONE say right now -->
+  <div class="grid section-gap">
+    <div class="col-12 card" id="discovery-signal-card">
+      <div class="card-head">
+        <div class="card-title">Discovery-Only Signal <span class="n">— computed with ONLY discovered__ patterns, excluding the hand-picked catalog (already blended into the main Overview signal too)</span></div>
+      </div>
+      <div id="discovery-signal-body"><div class="empty-state">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- Performance: how discovered patterns are ACTUALLY doing live -->
+  <div class="grid section-gap">
+    <div class="col-12 card">
+      <div class="card-head"><div class="card-title">Discovered Patterns — Live Performance</div></div>
+      <div id="discovery-performance-body"><div class="empty-state">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- Patterns: full provenance listing -->
+  <div class="grid section-gap">
+    <div class="col-12 card">
+      <div class="card-head">
+        <div class="card-title">Discovered Patterns <span class="n" id="discovery-patterns-count-note"></span></div>
+        <div class="tf-tabs" id="discovery-pattern-tabs"></div>
+      </div>
+      <div id="discovery-patterns-body"><div class="empty-state">Loading…</div></div>
+    </div>
+  </div>
+
+</div><!-- /tab-panel-discovery -->
+
+<div id="tab-panel-explored" style="display:none;">
+
+  <div class="grid section-gap">
+    <div class="col-12 card">
+      <div class="card-head">
+        <div class="card-title">Explored Setups <span class="n">— raw research leads from scripts/explore_setups.py, NOT validated signals</span></div>
+      </div>
+      <div class="delta">Runs the same beam search as Pattern Discovery, but with the win-rate pruning opened up and no FDR/blind-confirmation gate - it surfaces far more candidates, none of them checked against this system's hard gate. Read the out-of-sample column before trusting anything here: a setup whose full-sample win rate collapses out-of-sample is very likely a fluke found by testing this many combinations, not a real edge. Not wired into a Controls button - run <code>python scripts/explore_setups.py --symbol XAUUSD --technicals-only</code> yourself (wrap in <code>scripts/supervise.py</code> for 1min/5min) and refresh this tab.</div>
+    </div>
+  </div>
+
+  <div class="grid section-gap">
+    <div class="col-12 card">
+      <div class="card-head">
+        <div class="card-title">Setups by timeframe <span class="n" id="explored-count-note"></span></div>
+        <div class="tf-tabs" id="explored-tf-tabs"></div>
+      </div>
+      <div id="explored-news-note" style="display:none;"></div>
+      <div id="explored-body"><div class="empty-state">Loading…</div></div>
+    </div>
+  </div>
+
+</div><!-- /tab-panel-explored -->
+
+</div><!-- /wrap -->
+
+<script>
+const fmtInt = n => n == null ? "—" : n.toLocaleString();
+const fmtBytes = b => {
+  if (b == null) return "—";
+  const units = ["B","KB","MB","GB"];
+  let i = 0, v = b;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return v.toFixed(v < 10 && i > 0 ? 1 : 0) + " " + units[i];
+};
+const fmtRelTime = iso => {
+  if (!iso) return "never";
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 60) return Math.round(s) + "s ago";
+  if (s < 3600) return Math.round(s/60) + "m ago";
+  if (s < 86400) return Math.round(s/3600) + "h ago";
+  return Math.round(s/86400) + "d ago";
+};
+const fmtSeconds = s => {
+  if (s == null) return "—";
+  if (s < 60) return s.toFixed(1) + "s";
+  return (s/60).toFixed(1) + "m";
+};
+const fmtPct = p => p == null ? "—" : (p*100).toFixed(1) + "%";
+const num = (v, d=2) => v == null ? "—" : Number(v).toFixed(d);
+// Mirrors server._pattern_category() - the /api/signal contributions list
+// doesn't carry a category field of its own (Contribution in
+// signal_engine.py is deliberately just timeframe/pattern/direction/...),
+// so it's derived from the name the same way the server does for
+// /api/patterns/{tf}, instead of a stale technical-or-fundamental-only
+// guess that mislabeled every session_* and combo__* pattern as "technical".
+const patternCategory = name =>
+  name === "ml_model" ? "ml" :
+  name.startsWith("discovered__") ? "discovered" :
+  name.startsWith("combo__") ? "combo" :
+  name.startsWith("fundamental_") ? "fundamental" :
+  name.startsWith("session_") ? "session" :
+  name.startsWith("sr_") ? "support_resistance" :
+  name.startsWith("smc_") ? "smc" : "technical";
+
+function setClock() {
+  document.getElementById("clock").textContent = new Date().toUTCString().replace("GMT","UTC");
+}
+setInterval(setClock, 1000); setClock();
+
+async function getJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(url + " -> " + r.status);
+  return r.json();
+}
+
+let currentPatternTf = null;
+let currentSparkTf = null;
+let overviewCache = null;
+
+// Only jobs expected to run on a tight, regular cadence (cron-driven)
+// count toward "data may be stale" - build_history and build_pattern_library
+// are periodic/manual (backfill once, rebuild weekly-ish) and would show
+// permanently stale under a 6h check even when everything is healthy.
+const FRESHNESS_TRACKED_JOBS = new Set(["live_update", "build_fundamentals", "news_calendar"]);
+
+function renderSystemStatus(pulse) {
+  const jobs = Object.entries(pulse);
+  const el = document.getElementById("system-status");
+  if (!jobs.length) {
+    el.innerHTML = `<span class="dot muted"></span><span>no jobs run yet</span>`;
+    return;
+  }
+  const hasError = jobs.some(([, j]) => j.status === "error");
+  const stale = jobs.some(([name, j]) => FRESHNESS_TRACKED_JOBS.has(name) && j.seconds_ago > 3600 * 6);
+  let cls = "good", label = "all systems nominal";
+  if (hasError) { cls = "critical"; label = "job failing"; }
+  else if (stale) { cls = "warning"; label = "data may be stale"; }
+  el.innerHTML = `<span class="dot ${cls}"></span><span>${label}</span>`;
+}
+
+function renderCircuitBreaker(cb) {
+  const el = document.getElementById("circuit-breaker-banner");
+  // cb is null when the caller didn't even check (shouldn't happen in
+  // normal operation - see signal_engine.check_circuit_breaker_safe's
+  // fail-open policy); {tripped:false} is the healthy, evaluated state.
+  if (!cb || !cb.tripped) {
+    el.style.display = "none";
+    el.innerHTML = "";
+    return;
+  }
+  const streak = cb.current_streak ? `${cb.current_streak.length} ${cb.current_streak.type}${cb.current_streak.length > 1 ? "es" : ""} in a row` : "—";
+  el.style.display = "flex";
+  el.className = "cb-banner";
+  el.innerHTML = `
+    <div class="cb-title">⛔ CIRCUIT BREAKER TRIPPED — signal forced to HOLD</div>
+    <div class="cb-reasons">${cb.reasons.join("; ")}. A human must review and clear it — nothing in this system auto-clears a trip.</div>
+    <div class="cb-metrics">
+      <div><div class="cb-m-label">Streak</div><div class="cb-m-value">${streak}</div></div>
+      <div><div class="cb-m-label">Max drawdown</div><div class="cb-m-value">${num(cb.max_drawdown_r,1)}R</div></div>
+      <div><div class="cb-m-label">Open risk</div><div class="cb-m-value">${num(cb.open_risk_r,0)}R</div></div>
+    </div>`;
+}
+
+function renderHero(sig) {
+  renderCircuitBreaker(sig.circuit_breaker);
+  const el = document.getElementById("hero-body");
+  const dir = sig.direction || "HOLD";
+  const conf = sig.confidence || 0;
+  const rrChip = document.getElementById("hero-rr-chip");
+  if (rrChip) rrChip.textContent = `RISK:REWARD ${sig.risk_reward || "—"} · WIN RATE ≥ 60%`;
+  let tradeHtml = "";
+  if (sig.trade_plan) {
+    const tp = sig.trade_plan;
+    // tp.rr_ratio reflects whichever tier THIS specific signal was
+    // actually built for (see signal_engine._trade_plan's rr_ratio
+    // param) - falls back to the system-wide default (4) only for a
+    // trade_plan saved before that field existed.
+    const rr = tp.rr_ratio || 4;
+    const riskPct = 100 / (1 + rr);
+    tradeHtml = `
+      <div class="trade-plan">
+        <div class="tp-item"><div class="tp-label">Entry</div><div class="tp-value">${num(tp.entry,2)}</div></div>
+        <div class="tp-item"><div class="tp-label">Stop Loss</div><div class="tp-value stop">${num(tp.stop_loss,2)}</div></div>
+        <div class="tp-item"><div class="tp-label">Take Profit</div><div class="tp-value target">${num(tp.take_profit,2)}</div></div>
+        <div class="tp-item"><div class="tp-label">Risk (R)</div><div class="tp-value">${num(tp.risk,2)}</div></div>
+      </div>
+      <div class="rr-bar"><div class="risk" style="width:${riskPct}%"></div><div class="reward" style="width:${100-riskPct}%"></div></div>
+      <div class="toolbar" style="border:none;padding:0;margin-top:14px;">
+        <div class="filter-group">
+          <span class="glabel">Account $</span><input type="number" id="ps-account" value="10000" style="width:80px;background:var(--surface-2);border:1px solid var(--border-2);color:var(--ink);border-radius:6px;padding:4px 6px;font-size:11.5px;">
+          <span class="glabel">Risk %</span><input type="number" id="ps-risk" value="1" step="0.1" style="width:50px;background:var(--surface-2);border:1px solid var(--border-2);color:var(--ink);border-radius:6px;padding:4px 6px;font-size:11.5px;">
+          <span class="glabel">Contract oz</span><input type="number" id="ps-contract" value="100" style="width:60px;background:var(--surface-2);border:1px solid var(--border-2);color:var(--ink);border-radius:6px;padding:4px 6px;font-size:11.5px;">
+          <button class="chip-toggle" id="ps-calc" style="cursor:pointer;">Calculate position size</button>
+        </div>
+      </div>
+      <div id="ps-result" class="delta" style="margin-top:6px;"></div>`;
+  } else {
+    tradeHtml = `<div class="empty-state" style="text-align:left;padding:8px 0;">${sig.reason || "No qualifying pattern is active on the latest candle right now."}</div>`;
+  }
+
+  const contribRows = (sig.contributions || []).map(c => {
+    let regimeCell = "—";
+    if (c.regime) {
+      const regimeNote = c.regime_samples != null
+        ? `${fmtPct(c.regime_win_rate)} (${fmtInt(c.regime_samples)})`
+        : "unproven here";
+      regimeCell = `${c.regime}<br><span class="delta">${regimeNote}</span>${c.regime_penalized ? ' <span class="credibility-badge DECAYING" title="enough regime-specific history exists to show this pattern does NOT independently qualify in the current regime - weight discounted 50%">REGIME ⚠</span>' : ''}`;
+    }
+    const crossTfBadge = c.cross_timeframe_penalized
+      ? ' <span class="credibility-badge DECAYING" title="this discovered pattern was checked against the next-coarser timeframe using the same primitive conjunction and did NOT hold up there - weight discounted 50%. Not proof it is false: some patterns are honestly single-timeframe-scoped.">CROSS-TF ⚠</span>'
+      : '';
+    // ML challenger contributions only (live_signal.py's
+    // _shap_top_factors) - null for every rule-based pattern, and null
+    // if the `shap` package isn't installed even for the ML challenger,
+    // both of which just render as "—", never an error.
+    const shapCell = (c.shap_top_factors && c.shap_top_factors.length)
+      ? c.shap_top_factors.map(f =>
+          `<span class="delta" title="SHAP value ${f.shap_value}">${f.feature} (${f.shap_value > 0 ? '+' : ''}${f.shap_value.toFixed(2)})</span>`
+        ).join("<br>")
+      : "—";
+    return `
+    <tr style="${c.used_for_signal ? '' : 'opacity:.55;'}">
+      <td class="name">${c.pattern}<span class="badge-cat ${patternCategory(c.pattern)}">${patternCategory(c.pattern)}</span>${c.used_for_signal ? '' : '<span class="badge-cat" style="background:var(--muted-soft);color:var(--ink-muted);">not counted</span>'}${crossTfBadge}</td>
+      <td>${c.timeframe}</td>
+      <td><span class="dir-pill ${c.direction}">${c.direction.toUpperCase()}</span></td>
+      <td>${fmtPct(c.win_rate)} <span class="delta">(≥${fmtPct(c.win_rate_wilson_lower)})</span></td>
+      <td>${fmtInt(c.samples)}</td>
+      <td>${num(c.weight,3)}</td>
+      <td style="font-size:11px;">${regimeCell}</td>
+      <td style="font-size:11px;">${shapCell}</td>
+    </tr>`;
+  }).join("");
+
+  const suspendedHtml = (sig.suspended_skipped && sig.suspended_skipped.length) ? `
+    <div class="news-box" style="margin-top:10px;">
+      <div class="news-head">🛡 SELF-HEALING: ${sig.suspended_skipped.length} pattern/timeframe/direction combo(s) suspended</div>
+      <div>${sig.suspended_skipped.join(", ")} - currently DECAYING live (see Self-Assessment below), so excluded from this signal even though the mined library may still say they qualify.</div>
+    </div>` : "";
+
+  const contextPenaltyHtml = (sig.context_penalty && sig.context_penalty.multiplier < 1.0) ? `
+    <div class="news-box" style="margin-top:10px;">
+      <div class="news-head">📉 LOSS ATTRIBUTION: confidence discounted (×${sig.context_penalty.multiplier})</div>
+      <div>${sig.context_penalty.reasons.join("<br>")}</div>
+    </div>` : "";
+
+  let freshnessHtml = "";
+  if (sig.freshness) {
+    const f = sig.freshness;
+    let sourceBadge = "";
+    if (f.data_source && f.data_source.dukascopy_confirmed === false) {
+      sourceBadge = ` <span class="credibility-badge WATCH" title="${f.data_source.note}">⚠ BROKER FEED, NOT YET DUKASCOPY-CONFIRMED</span>`;
+    }
+    freshnessHtml = `<div class="freshness-badge ${f.status}">${f.status} · ${f.age_candles} candles old</div>${sourceBadge}`;
+  }
+
+  let newsHtml = "";
+  if (sig.news_risk && sig.news_risk.window_known) {
+    const nr = sig.news_risk;
+    if (nr.news_in_window) {
+      const events = nr.high_impact_events.map(e =>
+        `${e.event_type} in ${e.hours_from_now}h`).join(", ");
+      let perfHtml = "";
+      if (nr.historical_performance_with_news) {
+        const withN = nr.historical_performance_with_news, withoutN = nr.historical_performance_without_news;
+        perfHtml = `
+          <div class="news-perf">
+            <div class="np-item"><div class="np-label">Win rate w/ news (${fmtInt(withN.resolved)} samples)</div><div class="np-value">${fmtPct(withN.win_rate)}${withN.qualifies ? '' : ' (insufficient sample)'}</div></div>
+            <div class="np-item"><div class="np-label">Win rate w/o news (${fmtInt(withoutN.resolved)} samples)</div><div class="np-value">${fmtPct(withoutN.win_rate)}</div></div>
+          </div>`;
+      } else {
+        perfHtml = `<div class="delta" style="margin-top:6px;">Not enough historical occurrences with news exposure to give a reliable conditioned win rate for this pattern - treat with added caution.</div>`;
+      }
+      newsHtml = `
+        <div class="news-box">
+          <div class="news-head">⚠ HIGH-IMPACT NEWS BEFORE EXPECTED RESOLUTION</div>
+          <div>${events} · trade typically resolves in ~${nr.expected_resolution_hours}h</div>
+          ${perfHtml}
+        </div>`;
+    } else {
+      newsHtml = `
+        <div class="news-box clear">
+          <div class="news-head">No high-impact news expected before resolution</div>
+          <div>Typical resolution window: ~${nr.expected_resolution_hours}h (by ${nr.expected_resolution_utc.slice(0,16).replace('T',' ')} UTC)</div>
+        </div>`;
+    }
+  }
+
+  el.innerHTML = `
+    <div class="hero">
+      <div class="hero-direction">
+        <div class="direction-badge ${dir}">${dir}</div>
+        <div class="confidence-label">Confidence ${conf.toFixed(1)}%</div>
+        <div class="confidence-bar"><div class="confidence-fill" style="width:${Math.min(conf,100)}%"></div></div>
+        ${freshnessHtml}
+      </div>
+      <div>${tradeHtml}${newsHtml}${suspendedHtml}${contextPenaltyHtml}</div>
+      <div></div>
+    </div>
+    ${contribRows ? `
+    <div class="section-gap">
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Contributing pattern</th><th>Timeframe</th><th>Direction</th><th>Win rate (conf. lower bound)</th><th>Resolved</th><th>Weight</th><th>Current regime (regime-specific win rate)</th><th>Top factors (SHAP)</th></tr></thead>
+        <tbody>${contribRows}</tbody>
+      </table></div>
+      <div class="delta" style="margin-top:6px;">Only the strongest pattern per timeframe+direction counts toward direction/confidence ("not counted" = correlated with a stronger same-timeframe, same-direction pattern, shown for transparency only). Genuinely conflicting signals on the same timeframe - one bullish, one bearish - both still count, partially offsetting each other rather than one silently overriding the other. "REGIME ⚠" = this pattern has enough history in the CURRENT market regime specifically to show it doesn't independently hold up there, even though its blended-history stats qualify - its weight is discounted, not excluded. "Top factors" (ML challenger contributions only) = the model's own exact SHAP attribution for THIS call - which of its features pushed the score up (+) or down (−) the most, not a human narrative.</div>
+    </div>` : ""}
+  `;
+
+  const calcBtn = document.getElementById("ps-calc");
+  if (calcBtn) {
+    calcBtn.onclick = async () => {
+      const account = parseFloat(document.getElementById("ps-account").value);
+      const riskPct = parseFloat(document.getElementById("ps-risk").value) / 100;
+      const contract = parseFloat(document.getElementById("ps-contract").value);
+      const resultEl = document.getElementById("ps-result");
+      try {
+        const r = await getJSON(`/api/position_size?account_size=${account}&risk_pct=${riskPct}&contract_size=${contract}`);
+        resultEl.innerHTML = `$${r.dollar_risk} at risk → <strong>${r.lots} lots</strong> (${r.units} oz @ ${contract}oz/lot) — verify contract size against your own broker before trusting this.`;
+      } catch (e) {
+        resultEl.textContent = "Could not calculate: " + e.message;
+      }
+    };
+  }
+}
+
+function renderStats(ov) {
+  const storage = ov.storage || {};
+  let totalCandles = 0, tfCount = 0, latestEnd = null;
+  for (const [tf, s] of Object.entries(storage)) {
+    if (tf === "_raw_cache") continue;
+    totalCandles += s.candles; tfCount++;
+    if (s.end && (!latestEnd || s.end > latestEnd)) latestEnd = s.end;
+  }
+  document.getElementById("stat-candles").textContent = fmtInt(totalCandles);
+  document.getElementById("stat-candles-sub").textContent = `${tfCount} timeframe${tfCount===1?"":"s"} stored`;
+
+  const patterns = ov.patterns || {};
+  let qualifying = 0, total = 0;
+  for (const p of Object.values(patterns)) { qualifying += p.qualifying_count; total += p.total_patterns; }
+  document.getElementById("stat-qualifying").textContent = fmtInt(qualifying);
+  document.getElementById("stat-qualifying-sub").textContent = `of ${fmtInt(total)} mined, ≥60% win rate`;
+
+  const fund = ov.fundamentals || {};
+  document.getElementById("stat-events").textContent = fmtInt(fund.events || 0);
+  document.getElementById("stat-events-sub").textContent = fund.configured ? `last: ${fmtRelTime(fund.last_event)}` : "not configured yet";
+
+  if (latestEnd) {
+    const ageS = (Date.now() - new Date(latestEnd).getTime()) / 1000;
+    document.getElementById("stat-freshness").textContent = fmtRelTime(latestEnd);
+    document.getElementById("stat-freshness-sub").textContent = ageS > 86400*3 ? "stale — refresh live data" : "most recent candle across timeframes";
+  } else {
+    document.getElementById("stat-freshness").textContent = "—";
+    document.getElementById("stat-freshness-sub").textContent = "no data yet";
+  }
+}
+
+function renderPulse(pulse) {
+  const el = document.getElementById("pulse-body");
+  const jobs = ["build_history", "live_update", "build_fundamentals", "build_pattern_library"];
+  const rows = jobs.map(job => {
+    const hb = pulse[job];
+    if (!hb) return `
+      <div class="pulse-row">
+        <div class="pulse-job"><span class="pulse-badge never">never run</span><span class="pulse-job-name">${job}</span></div>
+        <div class="pulse-meta">—</div>
+      </div>`;
+    return `
+      <div class="pulse-row">
+        <div class="pulse-job"><span class="pulse-badge ${hb.status}">${hb.status}</span><span class="pulse-job-name">${job}</span></div>
+        <div class="pulse-meta">${fmtRelTime(hb.timestamp_utc)}${hb.duration_s != null ? " · " + fmtSeconds(hb.duration_s) : ""}</div>
+      </div>`;
+  }).join("");
+  el.innerHTML = rows;
+  renderSystemStatus(pulse);
+}
+
+// Broader health view than the 4 tracked jobs above - this dashboard
+// process's own uptime (proof of life beyond "the page loaded"), which
+// engine/data directories this instance is actually reading from (easy
+// to lose track of when running rules+ML side by side on different
+// ports), and which timeframe holds the single freshest candle across
+// the whole system plus which feed it came from.
+function renderSystemStatusDetail(status) {
+  const el = document.getElementById("system-status-detail");
+  // discover_patterns.py mines the rule-based system's own primitive
+  // conjunctions from raw candles/events - there is no equivalent for the
+  // ML challenger (its "mined view" is model predictions, not a primitive
+  // library - see ml_registry/lib_view/), so the action button only makes
+  // sense on that dashboard instance. Hidden here (once we actually know
+  // which engine this is) rather than left to 404 cleanly-but-confusingly
+  // if clicked on the ML dashboard.
+  const discoverBtn = document.getElementById("discover-patterns-btn");
+  const isMl = status && status.engine === "ml";
+  if (discoverBtn) discoverBtn.style.display = isMl ? "none" : "";
+  // Same reasoning as the button above - no primitive library to discover
+  // patterns from on the ML dashboard, so its whole own tab is hidden
+  // rather than shown empty/erroring. If it happened to be the active tab
+  // when this resolves (shouldn't normally happen), fall back to Overview.
+  const discoveryTopTab = document.getElementById("discovery-top-tab");
+  const discoverySummaryRow = document.getElementById("discovery-summary-row");
+  if (discoveryTopTab) discoveryTopTab.style.display = isMl ? "none" : "";
+  if (discoverySummaryRow) discoverySummaryRow.style.display = isMl ? "none" : "";
+  if (isMl && currentTopTab === "discovery") switchTopTab("overview");
+  if (!status) { el.innerHTML = ""; return; }
+  const fc = status.freshest_candle;
+  const fcHtml = fc
+    ? `${fc.timeframe} · ${fmtRelTime(fc.timestamp)} · <span class="badge-cat ${fc.source === 'dukascopy' ? 'technical' : 'fundamental'}">${fc.source || 'unknown'}</span>`
+    : "no candle data yet";
+  el.innerHTML = `
+    <div style="font-size:11px;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;border-top:1px solid var(--border);padding-top:12px;">System status</div>
+    <div class="pulse-row"><div class="pulse-job-name">Engine</div><div class="pulse-meta">${status.engine === 'ml' ? 'ML Challenger' : 'Rule-Based'} · ${status.symbol}</div></div>
+    <div class="pulse-row"><div class="pulse-job-name">Dashboard uptime</div><div class="pulse-meta">${fmtSeconds(status.uptime_seconds)}</div></div>
+    <div class="pulse-row"><div class="pulse-job-name">Freshest candle</div><div class="pulse-meta">${fcHtml}</div></div>
+    <div class="pulse-row" style="border-bottom:none;"><div class="pulse-job-name">Data dir</div><div class="pulse-meta" style="font-size:10.5px;word-break:break-all;max-width:220px;">${status.data_dir}</div></div>
+  `;
+}
+
+function renderStorage(storage) {
+  const el = document.getElementById("storage-body");
+  const rows = Object.entries(storage).filter(([tf]) => tf !== "_raw_cache").map(([tf, s]) => {
+    const bySource = s.by_source || {};
+    const sourceBadges = Object.entries(bySource).map(([src, n]) =>
+      `<span class="badge-cat ${src === 'dukascopy' ? 'technical' : 'fundamental'}">${src}: ${fmtInt(n)}</span>`).join(" ");
+    return `
+    <tr>
+      <td class="name">${tf}</td>
+      <td>${fmtInt(s.candles)} ${sourceBadges}</td>
+      <td>${s.start ? s.start.slice(0,10) : "—"}</td>
+      <td>${s.end ? s.end.slice(0,10) : "—"}</td>
+      <td>${fmtBytes(s.size_bytes)}</td>
+    </tr>`;
+  }).join("");
+  const raw = storage._raw_cache;
+  el.innerHTML = `
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Timeframe</th><th>Candles (by source)</th><th>From</th><th>To</th><th>File size</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="5" class="empty-state">No candle data yet — run build_history.py</td></tr>'}</tbody>
+    </table></div>
+    ${raw ? `<div class="delta" style="margin-top:10px;">Raw tick cache: ${fmtInt(raw.files)} files, ${fmtBytes(raw.size_bytes)}</div>` : ""}
+    <div class="delta" style="margin-top:6px;">Dukascopy always wins on overlapping timestamps - broker (mt_broker) data only ever fills gaps Dukascopy doesn't cover, regardless of import order.</div>
+  `;
+}
+
+// Backfill failures (real network/format errors, not weekend closures)
+// and anomalous inter-candle gaps - see data_quality.py. Kept separate
+// from the pulse "all systems nominal" rollup above on purpose: a job
+// finishing with status "ok" says nothing about whether some of the
+// hours it fetched came back empty because they genuinely failed
+// upstream (see dukascopy_fetch.py) rather than the market just being
+// closed - this is the one place that distinction is actually visible.
+function renderDataQuality(dq) {
+  const el = document.getElementById("data-quality-body");
+  if (!dq || !dq.available) { el.innerHTML = ""; return; }
+  const failed = dq.backfill?.hours_failed || 0;
+  const gapsByTf = dq.gaps_by_timeframe || {};
+  const totalGaps = Object.values(gapsByTf).reduce((n, g) => n + g.length, 0);
+  if (!failed && !totalGaps) {
+    el.innerHTML = `<div class="delta" style="color:var(--good);">Data quality: no failed backfill hours, no unexplained gaps.</div>`;
+    return;
+  }
+  const gapList = Object.entries(gapsByTf)
+    .filter(([, g]) => g.length)
+    .map(([tf, g]) => `${tf}: ${g.length} gap(s), most recent ${g[g.length - 1].from} → ${g[g.length - 1].to} (${g[g.length - 1].gap_hours}h)`)
+    .join("<br>");
+  el.innerHTML = `
+    <div class="news-box">
+      <div class="news-head">⚠ Data quality</div>
+      ${failed ? `<div>${fmtInt(failed)} hour(s) failed to fetch during the last backfill (network/format error, not market closure) - see data/data_quality_report.json, re-run build_history.py to retry them.</div>` : ""}
+      ${totalGaps ? `<div style="margin-top:${failed ? '6px' : '0'};">${fmtInt(totalGaps)} unexplained gap(s) bigger than a normal weekend close:<br>${gapList}</div>` : ""}
+    </div>`;
+}
+
+// Full on-disk footprint - fetched on demand (page load + manual
+// refresh button), NOT part of the 8s /api/overview poll. See
+// /api/files_overview's own docstring for why: the raw tick cache alone
+// can be tens of thousands of files after a full backfill, and
+// re-globbing that every 8s would be wasted I/O for a number that
+// barely changes minute to minute.
+async function loadFilesOverview() {
+  const el = document.getElementById("files-overview-body");
+  const btn = document.getElementById("files-overview-refresh");
+  btn.disabled = true;
+  try {
+    const data = await getJSON("/api/files_overview");
+    document.getElementById("files-overview-note").textContent =
+      `— ${fmtInt(data.total_files)} files · ${fmtBytes(data.total_bytes)} total`;
+    const rows = data.sections.map(s => `
+      <tr>
+        <td class="name">${s.label}</td>
+        <td style="font-size:10.5px;color:var(--ink-muted);word-break:break-all;">${s.path}</td>
+        <td class="${s.exists ? '' : 'qualify-tick no'}">${s.exists ? "yes" : "not created yet"}</td>
+        <td>${fmtInt(s.files)}</td>
+        <td>${fmtBytes(s.size_bytes)}</td>
+      </tr>`).join("");
+    el.innerHTML = `
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Category</th><th>Path</th><th>Exists</th><th>Files</th><th>Size</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  } catch (e) {
+    el.innerHTML = `<div class="empty-state">${e.message}</div>`;
+  }
+  btn.disabled = false;
+}
+
+function drawSparkline(candles) {
+  if (!candles.length) return "<div class='empty-state'>No candles</div>";
+  const closes = candles.map(c => c.close);
+  const min = Math.min(...closes), max = Math.max(...closes);
+  const w = 600, h = 60, pad = 4;
+  const pts = closes.map((c, i) => {
+    const x = pad + (i / (closes.length - 1)) * (w - 2*pad);
+    const y = h - pad - ((c - min) / (max - min || 1)) * (h - 2*pad);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  const up = closes[closes.length-1] >= closes[0];
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+    <polyline points="${pts}" fill="none" stroke="${up ? '#0ca30c' : '#e66767'}" stroke-width="2" vector-effect="non-scaling-stroke"/>
+  </svg>`;
+}
+
+function drawEquityCurve(points) {
+  if (!points.length) return "<div class='empty-state'>No resolved trades yet</div>";
+  const vals = points.map(p => p.cumulative_r);
+  const min = Math.min(0, ...vals), max = Math.max(0, ...vals);
+  const w = 900, h = 90, pad = 4;
+  const range = (max - min) || 1;
+  const x = i => pad + (i / (vals.length - 1 || 1)) * (w - 2*pad);
+  const y = v => h - pad - ((v - min) / range) * (h - 2*pad);
+  const pts = vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const zeroY = y(0).toFixed(1);
+  const finalPositive = vals[vals.length - 1] >= 0;
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="height:90px;">
+    <line x1="${pad}" y1="${zeroY}" x2="${w-pad}" y2="${zeroY}" stroke="var(--border-2)" stroke-width="1" stroke-dasharray="4,3" vector-effect="non-scaling-stroke"/>
+    <polyline points="${pts}" fill="none" stroke="${finalPositive ? '#0ca30c' : '#e66767'}" stroke-width="2" vector-effect="non-scaling-stroke"/>
+  </svg>`;
+}
+
+async function renderSparkForTf(tf) {
+  const body = document.getElementById("spark-body");
+  body.innerHTML = "<div class='empty-state'>Loading…</div>";
+  try {
+    const candles = await getJSON(`/api/candles/${tf}?limit=200`);
+    if (!candles.length) { body.innerHTML = "<div class='empty-state'>No candles for this timeframe</div>"; return; }
+    const last = candles[candles.length - 1];
+    const ageS = (Date.now() - new Date(last.timestamp).getTime()) / 1000;
+    body.innerHTML = `
+      <div class="spark-wrap">
+        <div class="spark-price">${num(last.close, 2)}</div>
+        <div class="spark-freshness">last candle: ${fmtRelTime(last.timestamp)}${ageS > 86400*3 ? " ⚠ stale" : ""}</div>
+      </div>
+      ${drawSparkline(candles)}
+    `;
+  } catch (e) {
+    body.innerHTML = `<div class="empty-state">${e.message}</div>`;
+  }
+}
+
+function renderSparkTabs(storageObj) {
+  const tabsEl = document.getElementById("spark-tabs");
+  const tfs = Object.keys(storageObj).filter(tf => tf !== "_raw_cache");
+  if (!tfs.length) { tabsEl.innerHTML = ""; return; }
+  if (!currentSparkTf || !tfs.includes(currentSparkTf)) currentSparkTf = tfs.includes("1d") ? "1d" : tfs[0];
+  tabsEl.innerHTML = tfs.map(tf => `<button class="tf-tab ${tf===currentSparkTf?'active':''}" data-spark-tf="${tf}">${tf}</button>`).join("");
+  tabsEl.querySelectorAll("[data-spark-tf]").forEach(btn => {
+    btn.onclick = () => { currentSparkTf = btn.dataset.sparkTf; renderSparkTabs(storageObj); renderSparkForTf(currentSparkTf); };
+  });
+  renderSparkForTf(currentSparkTf);
+}
+
+let patternsDataCache = null;
+let categoryFilter = "all";
+let qualifyingOnly = false;
+
+// ---- generic column-sort helper, shared by the Patterns/Journal/
+// Self-Assessment tables so there's one sort implementation instead of
+// three near-duplicates. Each table keeps its own {key, dir} state
+// object (null key = default/unsorted = whatever order the API
+// returned, e.g. the journal's own newest-first ordering) - clicking a
+// column the first time sorts ascending, clicking the SAME column again
+// flips to descending, clicking a DIFFERENT column resets to ascending
+// on that column. ----
+function sortRows(rows, state, accessor) {
+  if (!state.key) return rows;
+  return [...rows].sort((a, b) => {
+    let av = accessor(a, state.key), bv = accessor(b, state.key);
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;   // nulls sort last regardless of direction
+    if (bv == null) return -1;
+    if (typeof av === "string") av = av.toLowerCase();
+    if (typeof bv === "string") bv = bv.toLowerCase();
+    if (av < bv) return -1 * state.dir;
+    if (av > bv) return 1 * state.dir;
+    return 0;
+  });
+}
+function sortArrow(state, key) {
+  if (state.key !== key) return "";
+  return state.dir === 1 ? " ▲" : " ▼";
+}
+function sortableTh(state, key, label, onSortFnName) {
+  return `<th style="cursor:pointer;user-select:none;" onclick="${onSortFnName}('${key}')" title="Click to sort">${label}${sortArrow(state, key)}</th>`;
+}
+
+let patternsSortState = { key: null, dir: 1 };
+function sortPatterns(key) {
+  if (patternsSortState.key === key) patternsSortState.dir *= -1;
+  else { patternsSortState.key = key; patternsSortState.dir = 1; }
+  paintPatternsTable();
+}
+const patternsSortAccessor = (r, key) => {
+  if (key === "pattern") return r.category === "combo" && r.combo_of ? r.combo_of.join(" + ") : r.pattern;
+  if (key === "oos_win_rate") return r.oos_win_rate;
+  return r[key];
+};
+
+function paintPatternsTable() {
+  const body = document.getElementById("patterns-body");
+  const data = patternsDataCache;
+  if (!data) return;
+  document.getElementById("patterns-count-note").textContent =
+    `— ${data.rows.length} mined · 1:${data.rr_ratio} R:R · ≥${(data.min_win_rate*100).toFixed(0)}% win rate · ≥${data.min_resolved_samples} samples`;
+
+  let rows = data.rows;
+  if (categoryFilter !== "all") rows = rows.filter(r => r.category === categoryFilter);
+  if (qualifyingOnly) rows = rows.filter(r => r.qualifies);
+  rows = sortRows(rows, patternsSortState, patternsSortAccessor);
+
+  if (!rows.length) { body.innerHTML = "<div class='empty-state'>No patterns match this filter</div>"; return; }
+  // "why" (src/causal_autopsy.py, merged in via scripts/event_autopsy.py
+  // --merge-into-library): the ml_system/features.py features that read
+  // MEASURABLY DIFFERENTLY (Mann-Whitney U, Benjamini-Hochberg FDR
+  // corrected) between this pattern's WIN occurrences and its LOSS
+  // occurrences - an honest association, not a claim of causation. Same
+  // "—" when absent (no autopsy run yet, or too few resolved win/loss
+  // occurrences to say anything) as every other optional column here.
+  const whyCell = r => (r.why && r.why.significant_factors && r.why.significant_factors.length)
+    ? r.why.significant_factors.map(f =>
+        `<span class="delta" title="p=${f.p_value.toExponential(2)}, win median ${num(f.win_median,3)} vs loss median ${num(f.loss_median,3)}">${f.feature} (higher in ${f.higher_in})</span>`
+      ).join("<br>")
+    : "—";
+  const rowsHtml = rows.map(r => `
+    <tr>
+      <td class="name">${r.category === "combo" && r.combo_of ? r.combo_of.join(" + ") : r.pattern}<span class="badge-cat ${r.category}">${r.category}</span></td>
+      <td><span class="dir-pill ${r.direction}">${r.direction.toUpperCase()}</span></td>
+      <td>
+        <span class="meter-track"><span class="meter-fill ${r.qualifies?'pass':'fail'}" style="width:${r.win_rate!=null?Math.min(r.win_rate*100,100):0}%"></span></span>
+        ${fmtPct(r.win_rate)} <span class="delta">(≥${fmtPct(r.win_rate_wilson_lower)} conf.)</span>
+      </td>
+      <td>${fmtInt(r.resolved)}</td>
+      <td class="${r.oos_qualifies ? '' : 'qualify-tick no'}">${r.oos_win_rate != null ? fmtPct(r.oos_win_rate) + ' (' + fmtInt(r.oos_resolved) + ')' : '—'}</td>
+      <td>${r.expectancy_r != null ? num(r.expectancy_r,2) + "R" : "—"}${r.expectancy_r_after_costs != null ? ` <span class="delta">/ ${num(r.expectancy_r_after_costs,2)}R net</span>` : ""}</td>
+      <td class="qualify-tick ${r.qualifies?'yes':'no'}">${r.qualifies ? "✓ QUALIFIES" : "—"}</td>
+      <td style="font-size:11px;">${whyCell(r)}</td>
+    </tr>`).join("");
+  body.innerHTML = `
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          ${sortableTh(patternsSortState, "pattern", "Pattern", "sortPatterns")}
+          ${sortableTh(patternsSortState, "direction", "Direction", "sortPatterns")}
+          ${sortableTh(patternsSortState, "win_rate", "Win rate", "sortPatterns")}
+          ${sortableTh(patternsSortState, "resolved", "Resolved", "sortPatterns")}
+          ${sortableTh(patternsSortState, "oos_win_rate", "Out-of-sample", "sortPatterns")}
+          ${sortableTh(patternsSortState, "expectancy_r", "Expectancy (gross / net)", "sortPatterns")}
+          ${sortableTh(patternsSortState, "qualifies", "Gate", "sortPatterns")}
+          <th title="What measurably differed between this pattern's WIN and LOSS occurrences (src/causal_autopsy.py) - run scripts/event_autopsy.py --merge-into-library to populate">Why (win vs loss)</th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>`;
+}
+
+async function renderPatternsForTf(tf) {
+  const body = document.getElementById("patterns-body");
+  body.innerHTML = "<div class='empty-state'>Loading…</div>";
+  try {
+    patternsDataCache = await getJSON(`/api/patterns/${tf}`);
+    if (!patternsDataCache.rows.length) { body.innerHTML = "<div class='empty-state'>No patterns mined for this timeframe yet</div>"; return; }
+    paintPatternsTable();
+  } catch (e) {
+    body.innerHTML = `<div class="empty-state">${e.message}</div>`;
+  }
+}
+
+document.querySelectorAll("[data-cat]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    categoryFilter = btn.dataset.cat;
+    document.querySelectorAll("[data-cat]").forEach(b => b.classList.toggle("active", b === btn));
+    paintPatternsTable();
+  });
+});
+document.getElementById("qualifying-only").addEventListener("change", e => {
+  qualifyingOnly = e.target.checked;
+  paintPatternsTable();
+});
+
+function renderPatternTabs(patternsObj) {
+  const tabsEl = document.getElementById("pattern-tabs");
+  const tfs = Object.keys(patternsObj);
+  if (!tfs.length) { tabsEl.innerHTML = ""; document.getElementById("patterns-body").innerHTML = "<div class='empty-state'>No pattern library yet — run build_pattern_library.py</div>"; return; }
+  if (!currentPatternTf || !tfs.includes(currentPatternTf)) currentPatternTf = tfs.includes("1d") ? "1d" : tfs[0];
+  tabsEl.innerHTML = tfs.map(tf => `<button class="tf-tab ${tf===currentPatternTf?'active':''}" data-pattern-tf="${tf}">${tf}</button>`).join("");
+  tabsEl.querySelectorAll("[data-pattern-tf]").forEach(btn => {
+    btn.onclick = () => { currentPatternTf = btn.dataset.patternTf; renderPatternTabs(patternsObj); renderPatternsForTf(currentPatternTf); };
+  });
+  renderPatternsForTf(currentPatternTf);
+}
+
+function renderFundamentals(fund) {
+  const el = document.getElementById("fundamentals-body");
+  if (!fund.configured) {
+    el.innerHTML = `<div class="empty-state">Not configured yet.<br>Run discover_release_ids.py + build_fundamentals.py.</div>`;
+    return;
+  }
+  const byType = Object.entries(fund.by_type || {}).map(([t,n]) => `
+    <div class="pulse-row"><div class="pulse-job-name">${t}</div><div class="pulse-meta">${fmtInt(n)} events</div></div>`).join("");
+  const recent = (fund.recent || []).slice().reverse().slice(0,6).map(e => `
+    <tr><td class="name">${e.event_type}</td><td>${e.datetime_utc.slice(0,16).replace('T',' ')}</td><td>${e.value ?? "—"}</td></tr>`).join("");
+  el.innerHTML = `
+    ${byType}
+    <div class="section-gap">
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Event</th><th>When (UTC)</th><th>Value</th></tr></thead>
+        <tbody>${recent || '<tr><td colspan="3" class="empty-state">No events yet</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+}
+
+let perfPatternSortState = { key: null, dir: 1 };
+let perfDataCache = null;
+function sortPerfPatterns(key) {
+  if (perfPatternSortState.key === key) perfPatternSortState.dir *= -1;
+  else { perfPatternSortState.key = key; perfPatternSortState.dir = 1; }
+  renderPerformance(perfDataCache);
+}
+
+function renderPerformance(perf) {
+  perfDataCache = perf;
+  const el = document.getElementById("performance-body");
+  const sc = perf.scorecard || {};
+  const patterns = perf.patterns || [];
+  const curve = perf.equity_curve || [];
+  const contextRows = perf.context_attribution || [];
+
+  if (!sc.total) {
+    el.innerHTML = "<div class='empty-state'>No signals logged yet - this panel fills in as live_update.py runs, resolves trades against real candles, and grades its own results. Nothing here is simulated or self-reported by the signal engine itself.</div>";
+    return;
+  }
+
+  const streak = sc.current_streak;
+  const streakUnit = streak && streak.type === "win"
+    ? (streak.length > 1 ? "wins" : "win")
+    : (streak.length > 1 ? "losses" : "loss");
+  const streakText = streak && streak.length ? `${streak.length} ${streakUnit} in a row` : "—";
+  const tiles = `
+    <div class="perf-tiles">
+      <div class="perf-tile"><div class="v">${fmtPct(sc.live_win_rate)}</div><div class="l">Raw live win rate (${sc.win}W/${sc.loss}L)</div></div>
+      <div class="perf-tile"><div class="v">${sc.win_rate_wilson_lower != null ? fmtPct(sc.win_rate_wilson_lower) : "—"}</div><div class="l">Conservative (95% lower bound)</div></div>
+      <div class="perf-tile"><div class="v ${sc.total_r > 0 ? 'good' : sc.total_r < 0 ? 'critical' : ''}">${sc.total_r != null ? num(sc.total_r,1)+"R" : "—"}</div><div class="l">Total realized R (net ${sc.total_r_after_costs != null ? num(sc.total_r_after_costs,1)+"R" : "—"})</div></div>
+      <div class="perf-tile"><div class="v">${sc.avg_r != null ? num(sc.avg_r,2)+"R" : "—"}</div><div class="l">Avg R / resolved trade</div></div>
+      <div class="perf-tile"><div class="v ${streak && streak.type === 'loss' && streak.length >= 3 ? 'critical' : ''}">${streakText}</div><div class="l">Current streak</div></div>
+      <div class="perf-tile"><div class="v">${sc.open}</div><div class="l">Open / pending resolution</div></div>
+    </div>`;
+
+  const equityHtml = `
+    <div style="margin-bottom:16px;">
+      <div style="font-size:11px;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">
+        Equity curve — cumulative realized R across ${curve.length} resolved trade${curve.length===1?"":"s"} (dashed line = breakeven)
+      </div>
+      ${drawEquityCurve(curve)}
+    </div>`;
+
+  const sortedPatterns = sortRows(patterns, perfPatternSortState, (p, key) => {
+    if (key === "credibility") return p.score;  // sort by the underlying number, not the label text
+    return p[key];
+  });
+  const patternRows = sortedPatterns.map(p => `
+    <tr>
+      <td class="name">${p.pattern}</td>
+      <td>${p.timeframe}</td>
+      <td>${fmtInt(p.live_samples)} (${p.wins}W/${p.losses}L)</td>
+      <td>${fmtPct(p.live_win_rate)}${p.mined_win_rate != null ? ` <span class="delta">(mined ${fmtPct(p.mined_win_rate)})</span>` : ""}</td>
+      <td>${p.total_r != null ? num(p.total_r,1)+"R" : "—"} <span class="delta">(avg ${p.avg_r != null ? num(p.avg_r,2)+"R" : "—"})</span></td>
+      <td><span class="credibility-badge ${p.label}">${p.label}</span></td>
+    </tr>`).join("");
+
+  const patternsHtml = patterns.length ? `
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          ${sortableTh(perfPatternSortState, "pattern", "Pattern", "sortPerfPatterns")}
+          ${sortableTh(perfPatternSortState, "timeframe", "TF", "sortPerfPatterns")}
+          ${sortableTh(perfPatternSortState, "live_samples", "Live samples", "sortPerfPatterns")}
+          ${sortableTh(perfPatternSortState, "live_win_rate", "Live win rate", "sortPerfPatterns")}
+          ${sortableTh(perfPatternSortState, "total_r", "Realized R", "sortPerfPatterns")}
+          ${sortableTh(perfPatternSortState, "credibility", "Credibility", "sortPerfPatterns")}
+        </tr></thead>
+        <tbody>${patternRows}</tbody>
+      </table>
+    </div>
+    <div class="delta" style="margin-top:8px;">
+      CONFIRMED = live Wilson lower bound independently clears the 60% gate · WATCH = live samples exist but haven't cleared it yet (could still be noise) · DECAYING = live performance is statistically worse than what was mined · UNPROVEN = fewer than 10 live resolved trades so far.
+    </div>` : "<div class='empty-state'>No pattern has resolved a live trade yet.</div>";
+
+  const dimensionLabels = {
+    confluence_count: "Confluence (other patterns agreeing)",
+    session_at_entry: "Trading session at entry",
+    volatility_shock_ratio: "Volatility vs. stop sizing (diagnostic only)",
+  };
+  const contextSorted = [...contextRows].sort((a, b) => (b.decaying - a.decaying));
+  const contextTableRows = contextSorted.map(r => `
+    <tr>
+      <td class="name">${r.pattern}<span class="badge-cat ${patternCategory(r.pattern)}">${patternCategory(r.pattern)}</span></td>
+      <td>${r.timeframe}</td>
+      <td><span class="dir-pill ${r.direction === 'BUY' ? 'bullish' : 'bearish'}">${r.direction}</span></td>
+      <td style="font-size:11px;">${dimensionLabels[r.dimension] || r.dimension}</td>
+      <td>${r.bucket}</td>
+      <td>${fmtInt(r.samples)}</td>
+      <td>${fmtPct(r.win_rate)} <span class="delta">(≥${fmtPct(r.win_rate_wilson_upper)})</span></td>
+      <td>${r.baseline_win_rate != null ? fmtPct(r.baseline_win_rate) : "—"}</td>
+      <td>${r.decaying
+          ? '<span class="credibility-badge DECAYING">WORSE THAN PEERS</span>'
+          : '<span class="credibility-badge CONFIRMED">no difference proven</span>'}</td>
+    </tr>`).join("");
+
+  const contextHtml = contextRows.length ? `
+    <div class="section-gap">
+      <div style="font-size:11px;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">
+        Loss/win attribution — within each pattern's OWN live trades, does the context it fired in matter?
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Pattern</th><th>TF</th><th>Dir</th><th>Context</th><th>Bucket</th><th>N</th><th>Win rate (upper bound)</th><th>Rest of pattern</th><th>Verdict</th></tr></thead>
+          <tbody>${contextTableRows}</tbody>
+        </table>
+      </div>
+      <div class="delta" style="margin-top:8px;">
+        "WORSE THAN PEERS" = this specific context's Wilson upper bound is statistically below this SAME pattern's other live trades, on ≥15 samples both sides - live signals in this exact context now get a confidence discount (see the Signals Engine card's "LOSS ATTRIBUTION" note when it applies). Volatility-vs-stop-sizing is diagnostic only - it's only knowable after a trade resolves, so it can never discount a signal before it fires; it exists to show whether losses cluster around genuine volatility shocks rather than the pattern itself.
+      </div>
+    </div>` : "";
+
+  el.innerHTML = tiles + equityHtml + patternsHtml + contextHtml;
+}
+
+let journalSortState = { key: null, dir: 1 };
+function sortJournal(key) {
+  if (journalSortState.key === key) journalSortState.dir *= -1;
+  else { journalSortState.key = key; journalSortState.dir = 1; }
+  renderJournal(journalDataCache);
+}
+let journalDataCache = null;
+
+function renderJournal(journalData) {
+  journalDataCache = journalData;
+  const el = document.getElementById("journal-body");
+  const s = journalData.summary || {};
+  document.getElementById("journal-count-note").textContent =
+    s.total ? `— ${s.total} logged · ${s.open} open · live win rate ${s.live_win_rate != null ? fmtPct(s.live_win_rate) : "n/a"} (${s.win}W/${s.loss}L, ${s.expired} expired)` : "";
+
+  const sortedRows = sortRows(journalData.rows || [], journalSortState, (r, key) => r[key]);
+  const rows = sortedRows.map(r => `
+    <tr>
+      <td class="name">${r.pattern}</td>
+      <td>${r.timeframe}</td>
+      <td><span class="dir-pill ${r.direction === 'BUY' ? 'bullish' : 'bearish'}">${r.direction}</span></td>
+      <td>${num(r.entry,2)}</td>
+      <td class="tp-value stop" style="font-size:12.5px;">${num(r.stop_loss,2)}</td>
+      <td class="tp-value target" style="font-size:12.5px;">${num(r.take_profit,2)}</td>
+      <td><span class="journal-status ${r.status}">${r.status}</span></td>
+      <td>${r.actual_r != null ? num(r.actual_r,1) + "R" : "—"}</td>
+      <td>${fmtRelTime(r.logged_at_utc)}</td>
+    </tr>`).join("");
+
+  const decaying = (journalData.drift || []).filter(d => d.decaying);
+  const driftHtml = decaying.length ? `
+    <div class="news-box" style="margin-bottom:12px;">
+      <div class="news-head">⚠ ${decaying.length} PATTERN${decaying.length > 1 ? 'S' : ''} DECAYING LIVE</div>
+      ${decaying.map(d => `<div>${d.pattern} (${d.timeframe}): mined ${fmtPct(d.mined_win_rate)}, live ${fmtPct(d.live_win_rate)} over ${d.live_samples} trades (95% upper bound ${fmtPct(d.live_win_rate_upper_bound)}) - performing significantly worse than backtested</div>`).join("")}
+    </div>` : "";
+
+  if (!rows) { el.innerHTML = driftHtml + "<div class='empty-state'>No signals logged yet - the journal fills in as live_update.py runs and emits actionable signals.</div>"; return; }
+  el.innerHTML = driftHtml + `
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          ${sortableTh(journalSortState, "pattern", "Pattern", "sortJournal")}
+          ${sortableTh(journalSortState, "timeframe", "TF", "sortJournal")}
+          ${sortableTh(journalSortState, "direction", "Dir", "sortJournal")}
+          ${sortableTh(journalSortState, "entry", "Entry", "sortJournal")}
+          ${sortableTh(journalSortState, "stop_loss", "Stop", "sortJournal")}
+          ${sortableTh(journalSortState, "take_profit", "Target", "sortJournal")}
+          ${sortableTh(journalSortState, "status", "Status", "sortJournal")}
+          ${sortableTh(journalSortState, "actual_r", "Result", "sortJournal")}
+          ${sortableTh(journalSortState, "logged_at_utc", "Logged", "sortJournal")}
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+function renderUpcomingNews(events) {
+  const el = document.getElementById("upcoming-news-body");
+  if (!events || !events.length) {
+    el.innerHTML = "<div class='empty-state'>No scheduled events loaded.<br>Run build_fundamentals.py + news_calendar.py.</div>";
+    return;
+  }
+  const rows = events.slice(0, 8).map(e => {
+    const hoursAway = (new Date(e.datetime_utc).getTime() - Date.now()) / 3600000;
+    return `<tr>
+      <td class="name">${e.event_type}<span class="badge-cat fundamental">${e.impact}</span></td>
+      <td>${e.datetime_utc.slice(0,16).replace('T',' ')}</td>
+      <td>${hoursAway > 0 ? Math.round(hoursAway) + "h" : "past"}</td>
+    </tr>`;
+  }).join("");
+  el.innerHTML = `<div class="tbl-wrap"><table>
+    <thead><tr><th>Event</th><th>When (UTC)</th><th>In</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+
+function renderMlTiers(tiers) {
+  const row = document.getElementById("ml-tiers-row");
+  const el = document.getElementById("ml-tiers-body");
+  // Nothing tier-shaped to show for the rule-based engine (fixed 1:4) or
+  // before any tier has ever been trained/promoted - hide the whole card
+  // rather than show an empty/confusing table.
+  const real = (tiers || []).filter(t => t.risk_reward);
+  if (!real.length) { row.style.display = "none"; return; }
+  row.style.display = "";
+
+  const rows = real.slice().sort((a, b) => (parseFloat((a.risk_reward||"1:0").split(":")[1]) || 0) -
+                                            (parseFloat((b.risk_reward||"1:0").split(":")[1]) || 0))
+    .map(t => {
+      const dirCls = t.direction === "BUY" ? "good" : t.direction === "SELL" ? "critical" : "muted";
+      const tp = t.trade_plan;
+      const tradeCell = tp
+        ? `entry ${num(tp.entry,2)} · stop ${num(tp.stop_loss,2)} · target ${num(tp.take_profit,2)}`
+        : (t.reason || "no qualifying model this run");
+      return `<tr>
+        <td class="name">${t.risk_reward}</td>
+        <td><span class="dot ${dirCls}"></span>${t.direction}</td>
+        <td>${num(t.confidence,1)}%</td>
+        <td>${t.primary_pattern || "—"}${t.primary_timeframe ? ` <span class="delta">(${t.primary_timeframe})</span>` : ""}</td>
+        <td>${tradeCell}</td>
+      </tr>`;
+    }).join("");
+  el.innerHTML = `<div class="tbl-wrap"><table>
+    <thead><tr><th>Tier</th><th>Direction</th><th>Confidence</th><th>Primary model</th><th>Trade plan</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+
+async function loadMlTiers() {
+  try { renderMlTiers(await getJSON("/api/signal/tiers")); }
+  catch (e) { /* secondary widget - fail quiet rather than banner an error over the whole overview */ }
+}
+
+let mlBacktestCache = null;
+
+function renderMlBacktestDetail(tf, direction, rrTag, detail) {
+  const el = document.getElementById("ml-backtest-detail");
+  if (!detail || !detail.available) {
+    el.innerHTML = `<div class="empty-state">${(detail && detail.reason) || "No backtest available for this model version."}</div>`;
+    return;
+  }
+  const s = detail.summary;
+  const cal = detail.calibration;
+  const calRows = (cal.bins || []).map(b => `<tr>
+    <td>${(b.predicted_proba_mean*100).toFixed(1)}%</td>
+    <td>${(b.actual_win_rate*100).toFixed(1)}%</td>
+    <td>${fmtInt(b.n)}</td>
+  </tr>`).join("");
+  el.innerHTML = `
+    <div class="card-title" style="font-size:13px;">${tf} / ${direction} / 1:${rrTag} — version ${detail.version_id}</div>
+    <div class="grid" style="margin-top:8px;">
+      <div class="col-3 stat-tile card"><div class="value">${fmtInt(s.resolved)}</div><div class="label">Resolved trades</div></div>
+      <div class="col-3 stat-tile card"><div class="value">${fmtPct(s.win_rate)}</div><div class="label">Win rate</div></div>
+      <div class="col-3 stat-tile card"><div class="value">${s.max_drawdown_r}R</div><div class="label">Max drawdown</div></div>
+      <div class="col-3 stat-tile card"><div class="value">${s.profit_factor ?? '—'}</div><div class="label">Profit factor</div></div>
+    </div>
+    <div style="margin-top:10px;">${drawEquityCurve(detail.equity_curve)}</div>
+    <div class="delta" style="margin-top:4px;">Cumulative R after spread costs, out-of-fold, chronological by resolution time. r_efficiency=${s.r_efficiency ?? '—'} (mean/std of per-trade R - NOT an annualized Sharpe ratio, trade durations vary).</div>
+    ${calRows ? `
+    <div class="tbl-wrap" style="margin-top:10px;">
+      <table><thead><tr><th>Predicted P(win)</th><th>Actual win rate</th><th>n</th></tr></thead><tbody>${calRows}</tbody></table>
+    </div>
+    <div class="delta">Calibration: Brier score ${cal.brier_score} (lower is better; 0.25 = "always guess 50/50" baseline). Predicted and actual should track closely if the model's confidence is trustworthy, not just its aggregate win rate.</div>` : ""}
+    ${renderGlobalShap(detail.shap_global)}
+    ${renderDistilledRules(detail.distilled_rules)}
+  `;
+}
+
+function renderGlobalShap(shapGlobal) {
+  if (!shapGlobal || !shapGlobal.ranked_features || !shapGlobal.ranked_features.length) return "";
+  const top = shapGlobal.ranked_features.slice(0, 12);
+  const maxAbs = Math.max(...top.map(f => f.mean_abs_shap));
+  const rows = top.map(f => {
+    const pct = maxAbs > 0 ? (f.mean_abs_shap / maxAbs * 100) : 0;
+    const dirColor = f.mean_signed_shap >= 0 ? '#0ca30c' : '#e66767';
+    return `<div style="display:flex;align-items:center;gap:8px;margin:3px 0;">
+      <div style="width:220px;font-size:11px;text-align:right;color:var(--ink-muted);">${f.feature}</div>
+      <div style="flex:1;background:var(--surface-2);border-radius:3px;overflow:hidden;height:14px;">
+        <div style="width:${pct}%;height:100%;background:${dirColor};"></div>
+      </div>
+      <div style="width:60px;font-size:11px;">${f.mean_abs_shap.toFixed(4)}</div>
+    </div>`;
+  }).join("");
+  return `
+    <div class="card-title" style="font-size:13px;margin-top:16px;">Global feature importance (mean |SHAP|, ${fmtInt(shapGlobal.n_rows_sampled)} of ${fmtInt(shapGlobal.n_rows_total)} rows)</div>
+    <div style="margin-top:8px;">${rows}</div>
+    <div class="delta">Bar length = average magnitude of this feature's push on the model's score across its whole training history, not just one signal. Green = pushes toward the model's positive class on average, red = pushes away - "what this model leans on overall," complementing the per-signal SHAP breakdown in the Signals Engine contributions table above.</div>`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function renderDistilledRules(distilled) {
+  if (!distilled || !distilled.rules) return "";
+  return `
+    <div class="card-title" style="font-size:13px;margin-top:16px;">Distilled rules (surrogate tree, fidelity ${fmtPct(distilled.fidelity)})</div>
+    <pre style="background:var(--surface-2);border-radius:6px;padding:10px;font-size:11px;overflow-x:auto;white-space:pre;">${escapeHtml(distilled.rules)}</pre>
+    <div class="delta">A shallow (depth ${distilled.max_depth}) decision tree fit to APPROXIMATE this model's own predictions, not the real trade outcomes - a human-readable sketch of the ensemble's logic, not the ensemble itself. Fidelity ${fmtPct(distilled.fidelity)} = how often this tree agrees with the real model on the same rows; lower fidelity means the real model relies on interaction effects too complex for this sketch to fully capture.</div>`;
+}
+
+async function loadMlBacktestDetail(tf, direction, rrTag) {
+  const el = document.getElementById("ml-backtest-detail");
+  el.innerHTML = "<div class='empty-state'>Loading backtest…</div>";
+  try {
+    const detail = await getJSON(`/api/ml_backtest/${tf}/${direction}/${rrTag}`);
+    renderMlBacktestDetail(tf, direction, rrTag, detail);
+  } catch (e) {
+    el.innerHTML = `<div class="empty-state">Backtest API error: ${e.message}</div>`;
+  }
+}
+
+function renderMlBacktest(summary) {
+  const row = document.getElementById("ml-backtest-row");
+  const el = document.getElementById("ml-backtest-body");
+  const byTf = (summary && summary.by_timeframe) || {};
+  const tfs = Object.keys(byTf);
+  if (!summary || !summary.available || !tfs.length) { row.style.display = "none"; return; }
+  row.style.display = "";
+
+  const entries = [];
+  tfs.forEach(tf => (byTf[tf] || []).forEach(e => entries.push({ tf, ...e })));
+  entries.sort((a, b) => (b.resolved || 0) - (a.resolved || 0));
+
+  const rows = entries.map((e, i) => `<tr class="clickable-row" data-idx="${i}" style="cursor:pointer;">
+    <td class="name">${e.tf}</td>
+    <td><span class="dir-pill ${e.direction}">${e.direction.toUpperCase()}</span></td>
+    <td>1:${e.rr_tag}</td>
+    <td>${fmtPct(e.win_rate)}</td>
+    <td>${fmtInt(e.resolved)}</td>
+    <td>${e.max_drawdown_r ?? '—'}R</td>
+    <td>${e.profit_factor ?? '—'}</td>
+  </tr>`).join("");
+  el.innerHTML = `<div class="tbl-wrap"><table>
+    <thead><tr><th>Timeframe</th><th>Direction</th><th>Tier</th><th>Win rate</th><th>Resolved</th><th>Max DD</th><th>Profit factor</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+  el.querySelectorAll(".clickable-row").forEach(tr => {
+    tr.onclick = () => {
+      const e = entries[Number(tr.dataset.idx)];
+      loadMlBacktestDetail(e.tf, e.direction, e.rr_tag);
+    };
+  });
+  // Auto-load the most-traded tier's detail on first render so the card
+  // never opens empty.
+  if (entries.length && !mlBacktestCache) {
+    loadMlBacktestDetail(entries[0].tf, entries[0].direction, entries[0].rr_tag);
+  }
+  mlBacktestCache = summary;
+}
+
+async function loadMlBacktest() {
+  try { renderMlBacktest(await getJSON("/api/ml_backtest/summary")); }
+  catch (e) { /* secondary widget - fail quiet rather than banner an error over the whole overview */ }
+}
+
+function renderEventAutopsy(summary) {
+  const row = document.getElementById("event-autopsy-row");
+  const el = document.getElementById("event-autopsy-body");
+  const byTf = (summary && summary.by_timeframe) || {};
+  const tfs = Object.keys(byTf);
+  if (!summary || !summary.available || !tfs.length) { row.style.display = "none"; return; }
+  row.style.display = "";
+
+  const rows = [];
+  tfs.forEach(tf => {
+    const events = byTf[tf].events || {};
+    Object.entries(events).forEach(([name, ev]) => {
+      const top = ev.top_factor;
+      rows.push({ tf, name, ev, top });
+    });
+  });
+  rows.sort((a, b) => (b.ev.n_significant || 0) - (a.ev.n_significant || 0));
+
+  const body = rows.map(r => {
+    const topDesc = r.top
+      ? `<b>${r.top.feature}</b> (p=${r.top.p_value.toExponential(1)}, higher in ${r.top.higher_in})`
+      : "<span class='delta'>none survive FDR</span>";
+    return `<tr>
+      <td class="name">${r.tf}</td>
+      <td>${r.name}<span class="badge-cat ${r.ev.direction === 'bullish' ? 'good' : 'critical'}">${r.ev.direction || '—'}</span></td>
+      <td>${fmtPct(r.ev.win_rate)} (n=${fmtInt(r.ev.n_resolved)})</td>
+      <td>${r.ev.n_significant || 0} / ${r.ev.n_features_tested || 0}</td>
+      <td>${topDesc}</td>
+    </tr>`;
+  }).join("");
+  el.innerHTML = `<div class="tbl-wrap"><table>
+    <thead><tr><th>Timeframe</th><th>Event</th><th>Win rate</th><th>Significant factors</th><th>Strongest factor</th></tr></thead>
+    <tbody>${body}</tbody>
+  </table></div>`;
+}
+
+async function loadEventAutopsy() {
+  try { renderEventAutopsy(await getJSON("/api/event_autopsy/summary")); }
+  catch (e) { /* secondary widget - fail quiet rather than banner an error over the whole overview */ }
+}
+
+async function refreshOverview() {
+  try {
+    const ov = await getJSON("/api/overview");
+    overviewCache = ov;
+    renderHero(ov.signal);
+    renderStats(ov);
+    renderPulse(ov.pulse);
+    renderSystemStatusDetail(ov.system_status);
+    renderStorage(ov.storage);
+    renderDataQuality(ov.data_quality);
+    renderSparkTabs(ov.storage);
+    renderPatternTabs(ov.patterns);
+    renderFundamentals(ov.fundamentals);
+    renderJournal(ov.journal || {summary: {}, rows: []});
+    renderPerformance(ov.performance || {scorecard: {}, patterns: [], equity_curve: []});
+    renderUpcomingNews(ov.upcoming_news || []);
+  } catch (e) {
+    document.getElementById("hero-body").innerHTML = `<div class="empty-state">Dashboard API error: ${e.message}</div>`;
+  }
+}
+
+// ---- action controls ----
+const consoleEl = document.getElementById("console");
+function consoleLog(lines, replace=false) {
+  if (replace) consoleEl.innerHTML = "";
+  else if (consoleEl.querySelector(".empty")) consoleEl.innerHTML = "";
+  lines.forEach(l => {
+    const div = document.createElement("div");
+    div.className = "line" + (/error|traceback|exception/i.test(l) ? " err" : "");
+    div.textContent = l;
+    consoleEl.appendChild(div);
+  });
+  consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+
+async function runAction(action, endpointPath) {
+  document.querySelectorAll(".action-btn").forEach(b => b.disabled = true);
+  consoleLog([`▶ starting ${action}…`], true);
+  try {
+    const { job_id } = await (await fetch(endpointPath, { method: "POST" })).json();
+    let seen = 0;
+    const poll = setInterval(async () => {
+      const job = await getJSON(`/api/actions/${job_id}/status`);
+      if (job.output.length > seen) {
+        consoleLog(job.output.slice(seen));
+        seen = job.output.length;
+      }
+      if (job.status !== "running") {
+        clearInterval(poll);
+        consoleLog([`■ ${action} finished: ${job.status}`]);
+        document.querySelectorAll(".action-btn").forEach(b => b.disabled = false);
+        refreshOverview();
+      }
+    }, 1000);
+  } catch (e) {
+    consoleLog([`error: ${e.message}`]);
+    document.querySelectorAll(".action-btn").forEach(b => b.disabled = false);
+  }
+}
+
+document.querySelectorAll(".action-btn[data-action]").forEach(btn => {
+  btn.addEventListener("click", () => runAction(btn.dataset.action, `/api/actions/${btn.dataset.action}`));
+});
+
+document.getElementById("mt-import-btn").addEventListener("click", () => {
+  const exportDir = document.getElementById("mt-export-dir").value.trim();
+  const symbol = document.getElementById("mt-symbol").value.trim();
+  if (!exportDir || !symbol) {
+    consoleLog(["enter both the export dir and the broker symbol first"], true);
+    return;
+  }
+  const qs = `export_dir=${encodeURIComponent(exportDir)}&symbol=${encodeURIComponent(symbol)}`;
+  runAction("import_mt_data", `/api/actions/import_mt_data?${qs}`);
+});
+
+document.getElementById("files-overview-refresh").addEventListener("click", loadFilesOverview);
+
+// ---- Pattern Discovery Engine: its own tab (Signal / Performance / Patterns) ----
+// Deliberately separate render functions from the main dashboard's
+// (renderHero/renderPerformance/paintPatternsTable) rather than reusing
+// them with a flag - the discovery-only signal, scorecard, and pattern
+// listing are semantically different views (a standalone compute_signal()
+// restricted to discovered__ patterns, not a filtered slice of the
+// blended one), so keeping them as their own functions avoids a
+// conditional-riddled shared function that's harder to reason about than
+// three short, honest ones.
+
+let currentTopTab = "overview";
+function switchTopTab(name) {
+  currentTopTab = name;
+  document.getElementById("tab-panel-overview").style.display = name === "overview" ? "" : "none";
+  document.getElementById("tab-panel-discovery").style.display = name === "discovery" ? "" : "none";
+  document.getElementById("tab-panel-explored").style.display = name === "explored" ? "" : "none";
+  document.querySelectorAll(".top-tab[data-top-tab]").forEach(b => b.classList.toggle("active", b.dataset.topTab === name));
+  if (name === "discovery") loadDiscoveryDetail();
+  if (name === "explored") loadExploredSummary();
+}
+document.querySelectorAll("[data-top-tab]").forEach(btn => {
+  btn.addEventListener("click", () => switchTopTab(btn.dataset.topTab));
+});
+
+function renderDiscoverySummary(summary) {
+  const badge = document.getElementById("discovery-top-tab-count");
+  const statsEl = document.getElementById("discovery-summary-stats");
+  if (!statsEl) return;
+  if (!summary || !summary.available) {
+    if (badge) badge.textContent = "";
+    statsEl.innerHTML = `<div><div class="l">Pattern Discovery Engine not available on this dashboard (ML challenger has no primitive library to discover patterns from).</div></div>`;
+    return;
+  }
+  if (badge) badge.textContent = summary.total_qualifying ? String(summary.total_qualifying) : "";
+  if (!summary.total_discovered) {
+    statsEl.innerHTML = `<div><div class="l">No self-learned patterns yet — run "Discover Patterns (self-learn)" in Controls below, or <code>python src/discover_patterns.py</code>.</div></div>`;
+    return;
+  }
+  statsEl.innerHTML = `
+    <div><div class="v">${fmtInt(summary.total_discovered)}</div><div class="l">Self-learned patterns found</div></div>
+    <div><div class="v">${fmtInt(summary.total_qualifying)}</div><div class="l">Currently qualifying (≥60%, out-of-sample)</div></div>
+    <div><div class="v">${summary.best_win_rate != null ? fmtPct(summary.best_win_rate) : "—"}</div><div class="l">Best mined win rate</div></div>`;
+}
+
+function renderDiscoverySignal(sig) {
+  const el = document.getElementById("discovery-signal-body");
+  if (!sig || !sig.available) { el.innerHTML = "<div class='empty-state'>Not available on this dashboard.</div>"; return; }
+  const dir = sig.direction || "HOLD";
+  const conf = sig.confidence || 0;
+  let tradeHtml;
+  if (sig.trade_plan) {
+    const tp = sig.trade_plan;
+    tradeHtml = `
+      <div class="trade-plan">
+        <div class="tp-item"><div class="tp-label">Entry</div><div class="tp-value">${num(tp.entry,2)}</div></div>
+        <div class="tp-item"><div class="tp-label">Stop Loss</div><div class="tp-value stop">${num(tp.stop_loss,2)}</div></div>
+        <div class="tp-item"><div class="tp-label">Take Profit</div><div class="tp-value target">${num(tp.take_profit,2)}</div></div>
+        <div class="tp-item"><div class="tp-label">Risk (R)</div><div class="tp-value">${num(tp.risk,2)}</div></div>
+      </div>`;
+  } else {
+    tradeHtml = `<div class="empty-state" style="text-align:left;padding:8px 0;">${sig.reason || "No qualifying discovered pattern is active on the latest candle right now."}</div>`;
+  }
+  const contribRows = (sig.contributions || []).map(c => {
+    const crossTfBadge = c.cross_timeframe_penalized
+      ? ' <span class="credibility-badge DECAYING" title="checked against the next-coarser timeframe using the same primitive conjunction and did NOT hold up there - weight discounted 50%. Not proof it is false: some patterns are honestly single-timeframe-scoped.">CROSS-TF ⚠</span>'
+      : '';
+    return `
+    <tr style="${c.used_for_signal ? '' : 'opacity:.55;'}">
+      <td class="name">${c.pattern}<span class="badge-cat discovered">discovered</span>${c.used_for_signal ? '' : '<span class="badge-cat" style="background:var(--muted-soft);color:var(--ink-muted);">not counted</span>'}${crossTfBadge}</td>
+      <td>${c.timeframe}</td>
+      <td><span class="dir-pill ${c.direction}">${c.direction.toUpperCase()}</span></td>
+      <td>${fmtPct(c.win_rate)} <span class="delta">(≥${fmtPct(c.win_rate_wilson_lower)})</span></td>
+      <td>${fmtInt(c.samples)}</td>
+      <td>${num(c.weight,3)}</td>
+    </tr>`;
+  }).join("");
+  el.innerHTML = `
+    <div class="hero">
+      <div class="hero-direction">
+        <div class="direction-badge ${dir}">${dir}</div>
+        <div class="confidence-label">Confidence ${conf.toFixed(1)}%</div>
+        <div class="confidence-bar"><div class="confidence-fill" style="width:${Math.min(conf,100)}%"></div></div>
+      </div>
+      <div>${tradeHtml}</div>
+      <div></div>
+    </div>
+    ${contribRows ? `
+    <div class="section-gap">
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Discovered pattern</th><th>Timeframe</th><th>Direction</th><th>Win rate (conf. lower bound)</th><th>Resolved</th><th>Weight</th></tr></thead>
+        <tbody>${contribRows}</tbody>
+      </table></div>
+    </div>` : ""}`;
+}
+
+let discoveryPerfSortState = { key: null, dir: 1 };
+let discoveryPerfCache = null;
+function sortDiscoveryPerf(key) {
+  if (discoveryPerfSortState.key === key) discoveryPerfSortState.dir *= -1;
+  else { discoveryPerfSortState.key = key; discoveryPerfSortState.dir = 1; }
+  renderDiscoveryPerformance(discoveryPerfCache);
+}
+function renderDiscoveryPerformance(perf) {
+  discoveryPerfCache = perf;
+  const el = document.getElementById("discovery-performance-body");
+  if (!perf || !perf.available) { el.innerHTML = "<div class='empty-state'>Not available on this dashboard.</div>"; return; }
+  const rows = perf.scorecard || [];
+  const curve = perf.equity_curve || [];
+  if (!rows.length) {
+    el.innerHTML = "<div class='empty-state'>No discovered pattern has resolved a live trade yet - this fills in once discover_patterns.py has found something AND it has fired and resolved live at least once.</div>";
+    return;
+  }
+  const equityHtml = curve.length ? `
+    <div style="margin-bottom:16px;">
+      <div style="font-size:11px;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">
+        Equity curve — discovered patterns only, cumulative realized R across ${curve.length} resolved trade${curve.length===1?"":"s"}
+      </div>
+      ${drawEquityCurve(curve)}
+    </div>` : "";
+  const sorted = sortRows(rows, discoveryPerfSortState, (p, key) => key === "credibility" ? p.score : p[key]);
+  const rowsHtml = sorted.map(p => `
+    <tr>
+      <td class="name">${p.pattern}</td>
+      <td>${p.timeframe}</td>
+      <td>${fmtInt(p.live_samples)} (${p.wins}W/${p.losses}L)</td>
+      <td>${fmtPct(p.live_win_rate)}${p.mined_win_rate != null ? ` <span class="delta">(mined ${fmtPct(p.mined_win_rate)})</span>` : ""}</td>
+      <td>${p.total_r != null ? num(p.total_r,1)+"R" : "—"} <span class="delta">(avg ${p.avg_r != null ? num(p.avg_r,2)+"R" : "—"})</span></td>
+      <td><span class="credibility-badge ${p.label}">${p.label}</span></td>
+    </tr>`).join("");
+  el.innerHTML = equityHtml + `
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          ${sortableTh(discoveryPerfSortState, "pattern", "Pattern", "sortDiscoveryPerf")}
+          ${sortableTh(discoveryPerfSortState, "timeframe", "TF", "sortDiscoveryPerf")}
+          ${sortableTh(discoveryPerfSortState, "live_samples", "Live samples", "sortDiscoveryPerf")}
+          ${sortableTh(discoveryPerfSortState, "live_win_rate", "Live win rate", "sortDiscoveryPerf")}
+          ${sortableTh(discoveryPerfSortState, "total_r", "Realized R", "sortDiscoveryPerf")}
+          ${sortableTh(discoveryPerfSortState, "credibility", "Credibility", "sortDiscoveryPerf")}
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>`;
+}
+
+let currentDiscoveryTf = null;
+let discoveryPatternsCache = null;
+let discoveryPatternsSortState = { key: null, dir: 1 };
+function sortDiscoveryPatterns(key) {
+  if (discoveryPatternsSortState.key === key) discoveryPatternsSortState.dir *= -1;
+  else { discoveryPatternsSortState.key = key; discoveryPatternsSortState.dir = 1; }
+  paintDiscoveryPatternsTable();
+}
+function paintDiscoveryPatternsTable() {
+  const body = document.getElementById("discovery-patterns-body");
+  if (!discoveryPatternsCache || !currentDiscoveryTf) return;
+  const rows = sortRows(discoveryPatternsCache.by_timeframe[currentDiscoveryTf] || [], discoveryPatternsSortState, (r, key) => r[key]);
+  document.getElementById("discovery-patterns-count-note").textContent = `— ${rows.length} discovered on ${currentDiscoveryTf}`;
+  if (!rows.length) { body.innerHTML = "<div class='empty-state'>No discovered patterns for this timeframe yet</div>"; return; }
+  const rowsHtml = rows.map(r => `
+    <tr>
+      <td class="name">${r.pattern}<span class="badge-cat discovered">discovered</span></td>
+      <td><span class="dir-pill ${r.direction}">${(r.direction||"").toUpperCase()}</span></td>
+      <td>
+        <span class="meter-track"><span class="meter-fill ${r.qualifies?'pass':'fail'}" style="width:${r.win_rate!=null?Math.min(r.win_rate*100,100):0}%"></span></span>
+        ${fmtPct(r.win_rate)} <span class="delta">(≥${fmtPct(r.win_rate_wilson_lower)} conf.)</span>
+      </td>
+      <td>${fmtInt(r.resolved)}</td>
+      <td>${r.worst_era_score != null ? num(r.worst_era_score,3) : "—"}</td>
+      <td style="font-size:10.5px;">p=${r.p_value != null ? r.p_value.toExponential(2) : "—"} / bh≤${r.bh_threshold != null ? r.bh_threshold.toExponential(2) : "—"}</td>
+      <td class="${r.confirmation_qualifies ? '' : 'qualify-tick no'}">${r.confirmation_win_rate != null ? fmtPct(r.confirmation_win_rate) + ' (' + fmtInt(r.confirmation_resolved) + ')' : '—'}</td>
+      <td>${discoveryCrossTimeframeCell(r.cross_timeframe)}</td>
+      <td>${(r.primitives||[]).map(p => `<span class="primitive-chip${(p||"").startsWith("synth_") ? " synth" : ""}" ${(p||"").startsWith("synth_") ? 'title="synthesized by Layer 0 - no human chose this expression, see its full definition in synthesized_expressions"' : ""}>${p}</span>`).join("")}</td>
+      <td class="qualify-tick ${r.qualifies?'yes':'no'}">${r.qualifies ? "✓ QUALIFIES" : "—"}</td>
+    </tr>`).join("");
+  body.innerHTML = `
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          ${sortableTh(discoveryPatternsSortState, "pattern", "Pattern", "sortDiscoveryPatterns")}
+          ${sortableTh(discoveryPatternsSortState, "direction", "Direction", "sortDiscoveryPatterns")}
+          ${sortableTh(discoveryPatternsSortState, "win_rate", "Win rate", "sortDiscoveryPatterns")}
+          ${sortableTh(discoveryPatternsSortState, "resolved", "Resolved", "sortDiscoveryPatterns")}
+          ${sortableTh(discoveryPatternsSortState, "worst_era_score", "Worst-era score", "sortDiscoveryPatterns")}
+          <th>FDR p-value / threshold</th>
+          ${sortableTh(discoveryPatternsSortState, "confirmation_win_rate", "Blind confirmation", "sortDiscoveryPatterns")}
+          <th>Cross-timeframe</th>
+          <th>Built from (teal = synthesized, no human chose it)</th>
+          ${sortableTh(discoveryPatternsSortState, "qualifies", "Gate", "sortDiscoveryPatterns")}
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+    <div class="delta" style="margin-top:8px;">
+      Worst-era score = Wilson lower bound in the WORST of 4 disjoint historical eras (never a blended average) · FDR p-value/threshold = Benjamini-Hochberg significance vs. how many candidates this run actually tested (includes primitive-synthesis trials, not beam search alone) · Blind confirmation = performance on the newest ~25% of history, never touched during search · Cross-timeframe = the SAME conjunction re-checked on the next-coarser timeframe's own candles - a soft live-weight discount (never a hard reject) when it ran and failed, since some patterns are honestly single-timeframe-scoped.
+    </div>`;
+}
+function discoveryCrossTimeframeCell(ct) {
+  if (!ct || !ct.checked) return '<span class="delta">not checked (no coarser sibling timeframe)</span>';
+  if (ct.resolved === 0) return `<span class="delta">fires too rarely on ${ct.timeframe} to grade</span>`;
+  const cls = ct.qualifies ? "" : "qualify-tick no";
+  return `<span class="${cls}">${fmtPct(ct.win_rate)} (${fmtInt(ct.resolved)}) on ${ct.timeframe}${ct.qualifies ? "" : " ⚠"}</span>`;
+}
+function renderDiscoveryPatternTabs(data) {
+  const tabsEl = document.getElementById("discovery-pattern-tabs");
+  discoveryPatternsCache = data;
+  if (!data || !data.available) { tabsEl.innerHTML = ""; document.getElementById("discovery-patterns-body").innerHTML = "<div class='empty-state'>Not available on this dashboard.</div>"; return; }
+  const tfs = Object.keys(data.by_timeframe || {});
+  if (!tfs.length) { tabsEl.innerHTML = ""; document.getElementById("discovery-patterns-body").innerHTML = "<div class='empty-state'>No discovery run yet — run discover_patterns.py</div>"; return; }
+  if (!currentDiscoveryTf || !tfs.includes(currentDiscoveryTf)) currentDiscoveryTf = tfs.includes("1d") ? "1d" : tfs[0];
+  tabsEl.innerHTML = tfs.map(tf => `<button class="tf-tab ${tf===currentDiscoveryTf?'active':''}" data-discovery-tf="${tf}">${tf}</button>`).join("");
+  tabsEl.querySelectorAll("[data-discovery-tf]").forEach(btn => {
+    btn.onclick = () => { currentDiscoveryTf = btn.dataset.discoveryTf; renderDiscoveryPatternTabs(data); };
+  });
+  paintDiscoveryPatternsTable();
+}
+
+async function loadDiscoverySummary() {
+  try { renderDiscoverySummary(await getJSON("/api/discovery/summary")); }
+  catch (e) { /* secondary widget - fail quiet rather than banner an error over the whole overview */ }
+}
+async function loadDiscoveryDetail() {
+  try {
+    const [sig, perf, patterns] = await Promise.all([
+      getJSON("/api/discovery/signal"),
+      getJSON("/api/discovery/performance"),
+      getJSON("/api/discovery/patterns"),
+    ]);
+    renderDiscoverySignal(sig);
+    renderDiscoveryPerformance(perf);
+    renderDiscoveryPatternTabs(patterns);
+  } catch (e) {
+    document.getElementById("discovery-signal-body").innerHTML = `<div class="empty-state">Discovery API error: ${e.message}</div>`;
+  }
+}
+
+// ---- Explored Setups tab (scripts/explore_setups.py) -----------------------
+// Read-only: this tab only ever displays whatever explore_setups.py has
+// already written to explored_setups/<symbol>_<tf>.json - no trigger button
+// (see server.py's own comment on EXPLORED_DIR for why). /api/explored/setups
+// is per-timeframe (unlike /api/discovery/patterns' single by_timeframe
+// bundle), so setups are fetched lazily per tf and cached rather than all at
+// once - a 1min/5min explore run's output can be large.
+let currentExploredTf = null;
+let exploredSetupsCache = {};     // tf -> {setups, meta}
+let exploredSortState = { key: null, dir: 1 };
+
+function sortExplored(key) {
+  if (exploredSortState.key === key) exploredSortState.dir *= -1;
+  else { exploredSortState.key = key; exploredSortState.dir = 1; }
+  paintExploredTable();
+}
+// r.by_rr_ratio's keys come from Python's str(float) (e.g. "4.0") - JS's
+// String(4.0) collapses to "4", so a naive String(r.best_rr_ratio) lookup
+// never matches and every stats cell silently shows "—". Match by parsed
+// numeric value instead of relying on the two languages formatting floats
+// the same way.
+function bestRrStats(r) {
+  const key = Object.keys(r.by_rr_ratio || {}).find(k => parseFloat(k) === r.best_rr_ratio);
+  return key ? r.by_rr_ratio[key] : {};
+}
+const exploredSortAccessor = (r, key) => {
+  const stats = bestRrStats(r);
+  if (key === "primitives") return (r.primitives || []).join(" + ");
+  if (key === "win_rate") return stats.win_rate;
+  if (key === "resolved") return stats.resolved;
+  if (key === "oos_win_rate") return stats.oos_win_rate;
+  if (key === "oos_resolved") return stats.oos_resolved;
+  if (key === "n_excluded_for_news") return stats.n_excluded_for_news;
+  return r[key];
+};
+
+function paintExploredTable() {
+  const body = document.getElementById("explored-body");
+  const noteEl = document.getElementById("explored-news-note");
+  const countEl = document.getElementById("explored-count-note");
+  const entry = exploredSetupsCache[currentExploredTf];
+  if (!entry) { body.innerHTML = "<div class='empty-state'>Loading…</div>"; return; }
+  const meta = entry.meta || {};
+  countEl.textContent = currentExploredTf
+    ? `— ${entry.setups.length} on ${currentExploredTf}${meta.n_tested ? ` (of ${meta.n_tested.toLocaleString()} conjunctions tested, ${meta.technicals_only ? "technicals-only" : "incl. fundamentals"})` : ""}`
+    : "";
+  if (meta.news_note) {
+    noteEl.style.display = "";
+    noteEl.className = "delta section-gap";
+    noteEl.textContent = meta.news_note;
+  } else {
+    noteEl.style.display = "none";
+  }
+  if (!entry.setups.length) {
+    body.innerHTML = `<div class="empty-state">${entry.reason || "No setups for this timeframe yet - run scripts/explore_setups.py"}</div>`;
+    return;
+  }
+  const sorted = sortRows(entry.setups, exploredSortState, exploredSortAccessor);
+  const rowsHtml = sorted.map(r => {
+    const stats = bestRrStats(r);
+    const oosGap = stats.win_rate != null && stats.oos_win_rate != null ? stats.oos_win_rate - stats.win_rate : null;
+    const oosCls = oosGap == null ? "" : (oosGap < -0.15 ? "qualify-tick no" : "");
+    return `
+    <tr>
+      <td>${(r.primitives || []).map(p => `<span class="primitive-chip">${p}</span>`).join("")}</td>
+      <td><span class="dir-pill ${r.direction}">${(r.direction || "").toUpperCase()}</span></td>
+      <td>1:${r.best_rr_ratio}</td>
+      <td>${fmtPct(stats.win_rate)}</td>
+      <td>${fmtInt(stats.resolved)}</td>
+      <td class="${oosCls}">${fmtPct(stats.oos_win_rate)} <span class="delta">(n=${fmtInt(stats.oos_resolved)})</span></td>
+      <td>${stats.expectancy_r_after_costs != null ? num(stats.expectancy_r_after_costs, 2) + "R" : "—"}</td>
+      <td>${stats.n_excluded_for_news ? fmtInt(stats.n_excluded_for_news) : "—"}</td>
+    </tr>`;
+  }).join("");
+  body.innerHTML = `
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          ${sortableTh(exploredSortState, "primitives", "Setup", "sortExplored")}
+          ${sortableTh(exploredSortState, "direction", "Direction", "sortExplored")}
+          ${sortableTh(exploredSortState, "best_rr_ratio", "Best R:R", "sortExplored")}
+          ${sortableTh(exploredSortState, "win_rate", "Win rate (full)", "sortExplored")}
+          ${sortableTh(exploredSortState, "resolved", "Resolved", "sortExplored")}
+          ${sortableTh(exploredSortState, "oos_win_rate", "Out-of-sample", "sortExplored")}
+          ${sortableTh(exploredSortState, "best_expectancy_r_after_costs", "Expectancy (after costs)", "sortExplored")}
+          ${sortableTh(exploredSortState, "n_excluded_for_news", "News-excluded", "sortExplored")}
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+    <div class="delta" style="margin-top:8px;">
+      Out-of-sample rows highlighted red dropped >15 points below their full-sample win rate - the
+      single strongest signal that a result here is a fluke from testing this many combinations, not
+      a real edge. Nothing in this tab has been through FDR correction or a blind confirmation slice -
+      treat every row as a lead to investigate further, never as validated.
+    </div>`;
+}
+
+async function selectExploredTf(tf) {
+  currentExploredTf = tf;
+  document.querySelectorAll("#explored-tf-tabs [data-explored-tf]").forEach(
+    b => b.classList.toggle("active", b.dataset.exploredTf === tf)
+  );
+  if (!exploredSetupsCache[tf]) {
+    try {
+      exploredSetupsCache[tf] = await getJSON(`/api/explored/setups/${tf}`);
+    } catch (e) {
+      exploredSetupsCache[tf] = { setups: [], meta: {}, reason: `API error: ${e.message}` };
+    }
+  }
+  paintExploredTable();
+}
+
+async function loadExploredSummary() {
+  const tabsEl = document.getElementById("explored-tf-tabs");
+  try {
+    const summary = await getJSON("/api/explored/summary");
+    if (!summary.available) {
+      tabsEl.innerHTML = "";
+      document.getElementById("explored-body").innerHTML = `<div class="empty-state">${summary.reason || "Not available on this dashboard."}</div>`;
+      return;
+    }
+    const tfs = Object.keys(summary.by_timeframe || {});
+    if (!tfs.length) {
+      tabsEl.innerHTML = "";
+      document.getElementById("explored-body").innerHTML = "<div class='empty-state'>No explore_setups.py output yet — run <code>python scripts/explore_setups.py --symbol XAUUSD --technicals-only</code>.</div>";
+      return;
+    }
+    if (!currentExploredTf || !tfs.includes(currentExploredTf)) currentExploredTf = tfs.includes("1d") ? "1d" : tfs[0];
+    tabsEl.innerHTML = tfs.map(tf => `<button class="tf-tab ${tf === currentExploredTf ? 'active' : ''}" data-explored-tf="${tf}">${tf}</button>`).join("");
+    tabsEl.querySelectorAll("[data-explored-tf]").forEach(btn => {
+      btn.onclick = () => selectExploredTf(btn.dataset.exploredTf);
+    });
+    await selectExploredTf(currentExploredTf);
+  } catch (e) {
+    document.getElementById("explored-body").innerHTML = `<div class="empty-state">Explored Setups API error: ${e.message}</div>`;
+  }
+}
+
+refreshOverview();
+loadFilesOverview();
+loadDiscoverySummary();
+loadMlTiers();
+setInterval(loadMlTiers, 8000);
+loadEventAutopsy();
+setInterval(loadEventAutopsy, 8000);
+loadMlBacktest();
+setInterval(loadMlBacktest, 30000);
+setInterval(refreshOverview, 8000);
+setInterval(() => { loadDiscoverySummary(); if (currentTopTab === "discovery") loadDiscoveryDetail(); }, 8000);
+</script>
+</body>
+</html>
