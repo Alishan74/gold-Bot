@@ -154,7 +154,9 @@ def explore_timeframe(candles: pd.DataFrame, events: "pd.DataFrame | None",
                        min_start_score: float, min_improvement: float,
                        technicals_only: bool = False,
                        exclude_news_window: bool = True,
-                       seed_families: "list[str] | None" = None) -> tuple[list[dict], int]:
+                       seed_families: "list[str] | None" = None,
+                       checkpoint_path: "Path | None" = None,
+                       checkpoint_every: int = 200) -> tuple[list[dict], int]:
     atr_series = atr(candles)
     discovery_end = len(candles)  # no held-out confirmation slice - this is exploration, not final validation
 
@@ -178,6 +180,7 @@ def explore_timeframe(candles: pd.DataFrame, events: "pd.DataFrame | None",
         beam_width=beam_width, max_depth=max_depth, min_depth=min_depth,
         min_start_score=min_start_score, min_improvement=min_improvement,
         capture_all=True, base_primitives=base_primitives, seed_primitives=seed_primitives,
+        checkpoint_path=checkpoint_path, checkpoint_every=checkpoint_every,
     )
 
     # Only genuine multi-primitive conjunctions - a lone primitive was
@@ -242,9 +245,12 @@ def rebuild_all(symbol: str, data_dir: Path, out_dir: Path, timeframes: "list[st
                  beam_width: int, max_depth: int, min_depth: int,
                  min_start_score: float, min_improvement: float,
                  technicals_only: bool = False, exclude_news_window: bool = True,
-                 seed_families: "list[str] | None" = None) -> dict:
+                 seed_families: "list[str] | None" = None,
+                 checkpoint_dir: "Path | None" = None, checkpoint_every: int = 200) -> dict:
     candles_dir = data_dir / "candles"
     out_dir.mkdir(parents=True, exist_ok=True)
+    if checkpoint_dir is not None:
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
     timeframe_files = sorted(candles_dir.glob(f"{symbol}_*.parquet"))
     if not timeframe_files:
@@ -272,11 +278,12 @@ def rebuild_all(symbol: str, data_dir: Path, out_dir: Path, timeframes: "list[st
               f"min_start_score={min_start_score}, min_improvement={min_improvement}, "
               f"technicals_only={technicals_only}, exclude_news_window={news_filtering_active})")
 
+        checkpoint_path = (checkpoint_dir / f"{symbol}_{tf}.checkpoint.json") if checkpoint_dir is not None else None
         rows, n_tested = explore_timeframe(
             candles, events, rr_ratios, min_resolved,
             beam_width, max_depth, min_depth, min_start_score, min_improvement,
             technicals_only=technicals_only, exclude_news_window=exclude_news_window,
-            seed_families=seed_families,
+            seed_families=seed_families, checkpoint_path=checkpoint_path, checkpoint_every=checkpoint_every,
         )
         kept = rows[:top_n]
         out_path = out_dir / f"{symbol}_{tf}.json"
@@ -343,18 +350,31 @@ def main():
                               "family group with the same --out-dir, then merge_explored_setups.py to "
                               "combine the batches back into one file per timeframe. Default: no "
                               "restriction, matches every prior behavior.")
+    parser.add_argument("--checkpoint-dir", default=None,
+                         help="if set, caches every scored conjunction's result to "
+                              "<dir>/<symbol>_<tf>.checkpoint.json as the search runs (flushed every "
+                              "--checkpoint-every trials), and reuses that cache on the next run with the "
+                              "SAME --checkpoint-dir instead of re-simulating trades already scored - "
+                              "makes a search resumable across process restarts with an IDENTICAL final "
+                              "result to an uninterrupted run (verified: kill -9 mid-run + rerun with the "
+                              "same --checkpoint-dir reproduces the uninterrupted output exactly). Default: "
+                              "no checkpointing, matches every prior behavior.")
+    parser.add_argument("--checkpoint-every", type=int, default=200,
+                         help="flush the checkpoint cache to disk every N newly-scored conjunctions")
     args = parser.parse_args()
 
     rr_ratios = [float(x) for x in args.rr_ratios.split(",")]
     timeframes = [t.strip() for t in args.timeframes.split(",")] if args.timeframes else None
     data_dir = Path(args.data_dir)
     seed_families = [f.strip() for f in args.seed_families.split(",")] if args.seed_families else None
+    checkpoint_dir = Path(args.checkpoint_dir) if args.checkpoint_dir else None
 
     with track("explore_setups", path=data_dir / "heartbeats.json"):
         rebuild_all(args.symbol, data_dir, Path(args.out_dir), timeframes, rr_ratios,
                     args.min_resolved, args.top_n, args.beam_width, args.max_depth,
                     args.min_depth, args.min_start_score, args.min_improvement,
                     technicals_only=args.technicals_only, exclude_news_window=args.exclude_news_window,
+                    checkpoint_dir=checkpoint_dir, checkpoint_every=args.checkpoint_every,
                     seed_families=seed_families)
 
 

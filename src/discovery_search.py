@@ -55,6 +55,9 @@ Primitive objects, since both are the same dataclass shape.
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pandas as pd
 
 from discovery_primitives import PRIMITIVES, Primitive
@@ -107,10 +110,32 @@ def _is_compatible_extension(existing_families: set[str], existing_direction: in
     return True
 
 
+def _cache_key(primitives: tuple[str, ...], direction: int) -> str:
+    """JSON-object-key-safe encoding of (primitives, direction) - JSON
+    has no tuple keys, and a plain "|".join would be ambiguous if a
+    primitive name ever contained "|" (none currently do, but this is
+    unambiguous regardless)."""
+    return json.dumps([list(primitives), direction])
+
+
 def _score_and_wrap(primitives: tuple[str, ...], direction: int, occurred: pd.Series,
                      candles: pd.DataFrame, atr_series: pd.Series, discovery_end: int,
-                     primitives_by_name: dict[str, Primitive]) -> Conjunction:
-    result = score_conjunction(candles, occurred, direction, atr_series, discovery_end)
+                     primitives_by_name: dict[str, Primitive],
+                     score_cache: "dict[str, dict] | None" = None) -> Conjunction:
+    """`score_cache`: see search_conjunctions' own docstring - when given,
+    a (primitives, direction) pair already scored (from THIS run or a
+    prior, interrupted one resuming from a checkpoint) is looked up
+    instead of re-run through score_conjunction(), which is the single
+    most expensive step in the whole search (trade simulation). Cache
+    values are score_conjunction()'s own return dict - plain floats/
+    ints/lists, already JSON-serializable with no extra encoding step."""
+    key = _cache_key(primitives, direction) if score_cache is not None else None
+    if score_cache is not None and key in score_cache:
+        result = score_cache[key]
+    else:
+        result = score_conjunction(candles, occurred, direction, atr_series, discovery_end)
+        if score_cache is not None:
+            score_cache[key] = result
     return Conjunction(primitives, direction, occurred, result, primitives_by_name)
 
 
@@ -121,7 +146,9 @@ def search_conjunctions(candles: pd.DataFrame, events: "pd.DataFrame | None", at
                          extra_primitives: "list[Primitive] | None" = None,
                          capture_all: bool = False,
                          base_primitives: "list[Primitive] | None" = None,
-                         seed_primitives: "list[Primitive] | None" = None) -> tuple[list[Conjunction], int, list[Conjunction]]:
+                         seed_primitives: "list[Primitive] | None" = None,
+                         checkpoint_path: "Path | None" = None,
+                         checkpoint_every: int = 200) -> tuple[list[Conjunction], int, list[Conjunction]]:
     """Runs the full beam search. Returns (final_candidates, n_tested,
     all_scored) - `n_tested` is the TOTAL number of distinct conjunctions
     actually scored over the whole run (every starting primitive, every
@@ -174,12 +201,43 @@ def search_conjunctions(candles: pd.DataFrame, events: "pd.DataFrame | None", at
     direction, same rule this function's own final dedup already uses)
     carries MORE depth-1 starting points into extension than a single
     beam of the same width would have - strictly broader, never
-    narrower, than the unsplit search it stands in for."""
+    narrower, than the unsplit search it stands in for.
+
+    `checkpoint_path`: defaults to None, meaning no checkpointing at all
+    (every existing caller, including discover_patterns.py). When given,
+    trade-simulation results (score_conjunction()'s own already-JSON-
+    serializable return dict, keyed by primitives+direction) are cached
+    in memory during the run AND periodically (every `checkpoint_every`
+    trials) written to this path as plain JSON. If the process is killed
+    mid-run (e.g. this sandbox's own container restarts - the reason this
+    exists), the file on disk holds everything scored up to the last
+    flush. Calling search_conjunctions() AGAIN with the SAME
+    checkpoint_path loads that file first and skips re-simulating any
+    (primitives, direction) pair already in it - the expensive part
+    (trade simulation) is genuinely skipped, not just deduped after the
+    fact, so a search interrupted 5 times and resumed 5 times converges
+    to the IDENTICAL final result a single uninterrupted run would have
+    produced, just spread across several process lifetimes. Does not
+    change what gets tested or how the beam is built - purely a resumable
+    cache in front of the one expensive call (_score_and_wrap ->
+    score_conjunction) this search makes over and over."""
     n_tested = 0
     all_scored: list[Conjunction] = []
     base = base_primitives if base_primitives is not None else PRIMITIVES
     all_primitives = list(base) + list(extra_primitives or [])
     primitives_by_name: dict[str, Primitive] = {p.name: p for p in all_primitives}
+
+    score_cache: "dict[str, dict] | None" = None
+    _since_flush = 0
+    if checkpoint_path is not None:
+        if checkpoint_path.exists():
+            score_cache = json.loads(checkpoint_path.read_text())
+        else:
+            score_cache = {}
+
+    def _flush_checkpoint() -> None:
+        if checkpoint_path is not None:
+            checkpoint_path.write_text(json.dumps(score_cache))
 
     # Cache every primitive's raw boolean Series once - independent of
     # which conjunction it ends up in. Uses each Primitive's OWN `.fn`
@@ -200,11 +258,15 @@ def search_conjunctions(candles: pd.DataFrame, events: "pd.DataFrame | None", at
         for d in directions_to_try:
             n_tested += 1
             conj = _score_and_wrap((p.name,), d, primitive_series[p.name], candles, atr_series,
-                                    discovery_end, primitives_by_name)
+                                    discovery_end, primitives_by_name, score_cache=score_cache)
             if capture_all:
                 all_scored.append(conj)
             if conj.worst_era_score >= min_start_score:
                 beam.append(conj)
+            _since_flush += 1
+            if score_cache is not None and _since_flush >= checkpoint_every:
+                _flush_checkpoint()
+                _since_flush = 0
     beam.sort(key=lambda c: c.worst_era_score, reverse=True)
     beam = beam[:beam_width]
 
@@ -230,12 +292,16 @@ def search_conjunctions(candles: pd.DataFrame, events: "pd.DataFrame | None", at
                     trial_occurred = parent.occurred & primitive_series[p.name]
                     trial = _score_and_wrap(
                         parent.primitives + (p.name,), d, trial_occurred, candles, atr_series,
-                        discovery_end, primitives_by_name,
+                        discovery_end, primitives_by_name, score_cache=score_cache,
                     )
                     if capture_all:
                         all_scored.append(trial)
                     if trial.worst_era_score >= parent.worst_era_score + min_improvement:
                         next_round.append(trial)
+                    _since_flush += 1
+                    if score_cache is not None and _since_flush >= checkpoint_every:
+                        _flush_checkpoint()
+                        _since_flush = 0
         next_round.sort(key=lambda c: c.worst_era_score, reverse=True)
         beam = next_round[:beam_width]
         if depth >= min_depth:
@@ -251,4 +317,5 @@ def search_conjunctions(candles: pd.DataFrame, events: "pd.DataFrame | None", at
             seen[key] = c
     deduped = sorted(seen.values(), key=lambda c: c.worst_era_score, reverse=True)
 
+    _flush_checkpoint()  # final flush so a clean completion also leaves a complete, reusable cache
     return deduped, n_tested, all_scored
