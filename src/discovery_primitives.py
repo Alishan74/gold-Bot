@@ -53,9 +53,14 @@ import numpy as np
 import pandas as pd
 
 import smc_patterns as _smc
+from patterns import bb_lower_breakout as _pat_bb_lower
+from patterns import bb_upper_breakout as _pat_bb_upper
+from patterns import bollinger_bands as _bollinger_bands
 from patterns import macd as _macd
 from patterns import rsi as _rsi
 from patterns import sma as _sma
+from patterns import stochastic as _stochastic
+from patterns import vwap as _vwap
 from regime import adx as _adx
 from risk_reward import atr as _atr
 from session_patterns import SESSIONS, UTC
@@ -205,6 +210,33 @@ for _threshold in (20.0, 25.0, 30.0, 35.0, 40.0, 45.0, 50.0):
               (lambda df, ev, t=_threshold: _adx(df) > t))
 
 
+# ---- time-series momentum family (raw N-period return) ------------------------
+# Deliberately DISTINCT from slope_up/down above, not a duplicate: _slope()
+# is a least-squares regression over the trailing window (rewards a SMOOTH,
+# consistent trajectory), this is the literal academic time-series-momentum
+# factor definition (Jegadeesh & Titman-style: sign/magnitude of the raw
+# total return over the trailing N periods, indifferent to how smooth or
+# choppy the path there was) - two candles that end up implying the same
+# raw return can have very different regression slopes (a smooth grind vs a
+# single spike), and the search can now tell whether smoothness or raw
+# magnitude is the thing that actually matters here.
+
+def _n_period_return(close: pd.Series, window: int) -> pd.Series:
+    return close.pct_change(window)
+
+
+for _window in (10, 20, 50, 100):
+    _register(f"momentum_return_up_{_window}", "momentum", +1,
+              (lambda df, ev, w=_window: _n_period_return(df["close"], w) > 0))
+    _register(f"momentum_return_down_{_window}", "momentum", -1,
+              (lambda df, ev, w=_window: _n_period_return(df["close"], w) < 0))
+for _window, _pct in [(20, 0.01), (20, 0.02), (50, 0.02), (50, 0.03)]:
+    _register(f"momentum_return_strong_up_{_window}_{_pct}", "momentum", +1,
+              (lambda df, ev, w=_window, p=_pct: _n_period_return(df["close"], w) > p))
+    _register(f"momentum_return_strong_down_{_window}_{_pct}", "momentum", -1,
+              (lambda df, ev, w=_window, p=_pct: _n_period_return(df["close"], w) < -p))
+
+
 # ---- volatility family -------------------------------------------------------
 
 def _volatility_ratio(df: pd.DataFrame, baseline_window: int = 100) -> pd.Series:
@@ -231,6 +263,51 @@ def _vol_of_vol(df: pd.DataFrame, window: int = 20) -> pd.Series:
 for _threshold in (0.2, 0.3, 0.4, 0.5, 0.6):
     _register(f"vol_of_vol_above_{_threshold}", "volatility", 0,
               (lambda df, ev, t=_threshold: _vol_of_vol(df) > t))
+
+
+# ---- oscillator family (Bollinger / Stochastic / VWAP) -------------------------
+# All three existed in patterns.py (used by the SEPARATE hand-picked
+# build_pattern_library.py pipeline) but, like smc_patterns.py before this
+# session, were never wired into THIS search - discover_patterns.py /
+# explore_setups.py have never been able to combine a Bollinger squeeze,
+# Stochastic cross, or VWAP cross with anything from another family until
+# now. Reuses patterns.py's own implementations directly, no reimplementation.
+
+def _bb_position(df: pd.DataFrame) -> pd.Series:
+    """0 = at the lower band, 1 = at the upper band, can exceed [0,1]
+    when price is genuinely outside the bands - continuous position
+    analogous to structure family's near_range_high, but volatility-
+    normalized (std-based) rather than a fixed high/low channel."""
+    upper, _, lower = _bollinger_bands(df["close"])
+    return (df["close"] - lower) / (upper - lower).replace(0, np.nan)
+
+
+_register("bb_upper_breakout", "oscillator", +1, lambda df, ev: _pat_bb_upper(df))
+_register("bb_lower_breakout", "oscillator", -1, lambda df, ev: _pat_bb_lower(df))
+for _thresh in (0.9, 0.95, 1.0):
+    _register(f"bb_near_upper_{_thresh}", "oscillator", -1,
+              (lambda df, ev, t=_thresh: _bb_position(df) > t))
+for _thresh in (0.1, 0.05, 0.0):
+    _register(f"bb_near_lower_{_thresh}", "oscillator", +1,
+              (lambda df, ev, t=_thresh: _bb_position(df) < t))
+
+_register("stoch_oversold_cross", "oscillator", +1,
+          lambda df, ev: (_stochastic(df)[0] > 20) & (_stochastic(df)[0].shift(1) <= 20))
+_register("stoch_overbought_cross", "oscillator", -1,
+          lambda df, ev: (_stochastic(df)[0] < 80) & (_stochastic(df)[0].shift(1) >= 80))
+for _level in (10, 20, 30):
+    _register(f"stoch_below_{_level}", "oscillator", +1,
+              (lambda df, ev, lvl=_level: _stochastic(df)[0] < lvl))
+for _level in (70, 80, 90):
+    _register(f"stoch_above_{_level}", "oscillator", -1,
+              (lambda df, ev, lvl=_level: _stochastic(df)[0] > lvl))
+
+_register("vwap_bullish_cross", "oscillator", +1,
+          lambda df, ev: (df["close"] > _vwap(df)) & (df["close"].shift(1) <= _vwap(df).shift(1)))
+_register("vwap_bearish_cross", "oscillator", -1,
+          lambda df, ev: (df["close"] < _vwap(df)) & (df["close"].shift(1) >= _vwap(df).shift(1)))
+_register("above_vwap", "oscillator", +1, lambda df, ev: df["close"] > _vwap(df))
+_register("below_vwap", "oscillator", -1, lambda df, ev: df["close"] < _vwap(df))
 
 
 # ---- structure family (position within a recent range) ----------------------
@@ -354,6 +431,73 @@ for _event_type in ("CPI", "PCE", "NFP", "GDP"):
         _register(f"fundamental_{_event_type.lower()}_surprise_cool_{_z}", "fundamental", -1,
                    (lambda df, ev, et=_event_type, z=_z:
                     (_surprise_zscore_on_candles(df, ev, et) < -z).fillna(False)))
+
+
+# ---- carry family (DXY / real-yield level + trend) -----------------------------
+# Gold pays no yield, so its "carry" (the return from just holding the
+# position, independent of price direction - the same concept FX/rates
+# carry trades are named for) is the OPPORTUNITY COST of not holding a
+# yielding asset instead: when real (inflation-adjusted) yields rise,
+# holding gold gets relatively more expensive (bearish gold); when they
+# fall, relatively cheaper (bullish gold) - a real, causal, widely-cited
+# mechanism, not a hand-wavy analogy. DXY strength/weakness is gold's
+# other standard macro cross-check (gold is dollar-priced, so a stronger
+# dollar is mechanically bearish all else equal, though the correlation is
+# regime-dependent - exactly what the search is for).
+#
+# These primitives read df["dxy"]/df["real_yield_10y"] columns that
+# explore_setups.py's _attach_context_series() merges onto candles from
+# data/context/*.parquet BEFORE the search ever sees them (look-ahead-safe
+# merge_asof, most-recent-PRIOR-day value only) - NOT columns every caller
+# is guaranteed to have (a candles frame without that merge applied simply
+# lacks them), so each primitive here checks for the column and returns an
+# all-False Series rather than raising when it's absent.
+
+def _context_col_or_none(df: pd.DataFrame, col: str) -> "pd.Series | None":
+    return df[col] if col in df.columns else None
+
+
+def _context_trend(df: pd.DataFrame, col: str, window: int) -> pd.Series:
+    series = _context_col_or_none(df, col)
+    if series is None:
+        return pd.Series(False, index=df.index)
+    return series.diff(window)
+
+
+for _window in (20, 100):
+    _register(f"carry_real_yield_rising_{_window}", "carry", -1,
+              (lambda df, ev, w=_window: (_context_trend(df, "real_yield_10y", w) > 0).fillna(False)))
+    _register(f"carry_real_yield_falling_{_window}", "carry", +1,
+              (lambda df, ev, w=_window: (_context_trend(df, "real_yield_10y", w) < 0).fillna(False)))
+    _register(f"carry_dxy_rising_{_window}", "carry", -1,
+              (lambda df, ev, w=_window: (_context_trend(df, "dxy", w) > 0).fillna(False)))
+    _register(f"carry_dxy_falling_{_window}", "carry", +1,
+              (lambda df, ev, w=_window: (_context_trend(df, "dxy", w) < 0).fillna(False)))
+
+
+def _context_vs_own_median(df: pd.DataFrame, col: str, window: int, above: bool) -> pd.Series:
+    """Level relative to its own trailing rolling median - a self-
+    normalizing "high/low regime" test that needs no hardcoded absolute
+    threshold (a real yield of 2% was a totally different regime in 2010
+    than in 2023 - this is regime-relative, not an assumed fixed
+    cutoff). `above`/"below" are each computed directly with their own
+    fillna(False) (NOT one as `~` the other) - during the rolling
+    window's warm-up period the median itself is NaN, so `series >
+    median` and `series < median` are BOTH correctly False/undefined
+    there; naively inverting one to get the other would incorrectly mark
+    the entire warm-up period as "below" (or "above")."""
+    series = _context_col_or_none(df, col)
+    if series is None:
+        return pd.Series(False, index=df.index)
+    median = series.rolling(window, min_periods=window // 2).median()
+    return (series > median).fillna(False) if above else (series < median).fillna(False)
+
+
+for _window in (250, 1000):
+    _register(f"carry_real_yield_above_own_median_{_window}", "carry", -1,
+              (lambda df, ev, w=_window: _context_vs_own_median(df, "real_yield_10y", w, above=True)))
+    _register(f"carry_real_yield_below_own_median_{_window}", "carry", +1,
+              (lambda df, ev, w=_window: _context_vs_own_median(df, "real_yield_10y", w, above=False)))
 
 
 # ---- seasonality family --------------------------------------------------------

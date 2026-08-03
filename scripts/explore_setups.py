@@ -114,6 +114,47 @@ def _high_impact_events(events: "pd.DataFrame | None") -> "pd.DataFrame | None":
     return high if not high.empty else None
 
 
+CONTEXT_SERIES_NAMES = ("dxy", "real_yield_10y")
+
+
+def _load_context_series(data_dir: Path) -> dict[str, pd.DataFrame]:
+    """build_fundamentals.py's continuous background series (DXY, 10y
+    real yield) - previously only ever loaded to build the fundamental_*
+    SURPRISE features (see discovery_primitives.py's fundamental-surprise
+    family docstring); the raw LEVEL/TREND of these series was never
+    itself exposed to the search at all until the carry family below."""
+    context_dir = data_dir / "context"
+    out = {}
+    for name in CONTEXT_SERIES_NAMES:
+        path = context_dir / f"{name}.parquet"
+        if path.exists():
+            out[name] = pd.read_parquet(path).sort_values("date")
+    return out
+
+
+def _attach_context_series(candles: pd.DataFrame, context: "dict[str, pd.DataFrame]") -> pd.DataFrame:
+    """Merges each daily context series onto intraday candles as a new
+    column (same name as the series) via merge_asof(direction="backward")
+    - every candle gets the most recent PRIOR (or same-day) daily value,
+    NEVER a future one, so this is look-ahead-safe the same way every
+    other join in this codebase (build_fundamentals.py's own release-date
+    alignment, event_autopsy's news-window tagging) is. A context series
+    with no file on disk is simply absent as a column - discovery_
+    primitives.py's carry family primitives check for the column's
+    presence and return an inert (all-False) series when it's missing,
+    rather than crashing, so this still works on data without the merge
+    applied (e.g. before build_fundamentals.py has ever been run)."""
+    if not context:
+        return candles
+    candles = candles.sort_values("timestamp").reset_index(drop=True)
+    for name, series_df in context.items():
+        candles = pd.merge_asof(
+            candles, series_df.rename(columns={"date": "timestamp"}),
+            on="timestamp", direction="backward",
+        )
+    return candles
+
+
 def _news_in_window_mask(trades: pd.DataFrame, candles: pd.DataFrame, high_impact: pd.DataFrame) -> np.ndarray:
     """Same semantics as risk_reward.tag_news_in_window() (does a
     high-impact event's datetime_utc fall in [entry_time, resolution_time]
@@ -268,15 +309,22 @@ def rebuild_all(symbol: str, data_dir: Path, out_dir: Path, timeframes: "list[st
         print("note: --exclude-news-window is on but no fundamentals data was found "
               "(data/events/fundamentals.parquet) - nothing to filter, running unfiltered.")
 
+    context = _load_context_series(data_dir)
+    if not context:
+        print("note: no DXY/real-yield context data found (data/context/*.parquet) - "
+              "carry-family primitives will be inert for this run.")
+
     summary = {}
     for path in timeframe_files:
         tf = path.stem.replace(f"{symbol}_", "")
         candles = pd.read_parquet(path).sort_values("timestamp").reset_index(drop=True)
+        candles = _attach_context_series(candles, context)
         print(f"{tf}: exploring over {len(candles)} candles "
               f"({candles['timestamp'].min()} -> {candles['timestamp'].max()}) "
               f"at R:R in {rr_ratios} (beam_width={beam_width}, max_depth={max_depth}, "
               f"min_start_score={min_start_score}, min_improvement={min_improvement}, "
-              f"technicals_only={technicals_only}, exclude_news_window={news_filtering_active})")
+              f"technicals_only={technicals_only}, exclude_news_window={news_filtering_active}, "
+              f"context_series={list(context.keys())})")
 
         checkpoint_path = (checkpoint_dir / f"{symbol}_{tf}.checkpoint.json") if checkpoint_dir is not None else None
         rows, n_tested = explore_timeframe(
