@@ -153,18 +153,31 @@ def explore_timeframe(candles: pd.DataFrame, events: "pd.DataFrame | None",
                        beam_width: int, max_depth: int, min_depth: int,
                        min_start_score: float, min_improvement: float,
                        technicals_only: bool = False,
-                       exclude_news_window: bool = True) -> tuple[list[dict], int]:
+                       exclude_news_window: bool = True,
+                       seed_families: "list[str] | None" = None) -> tuple[list[dict], int]:
     atr_series = atr(candles)
     discovery_end = len(candles)  # no held-out confirmation slice - this is exploration, not final validation
 
     base_primitives = [p for p in PRIMITIVES if p.family != "fundamental"] if technicals_only else None
     high_impact = _high_impact_events(events) if exclude_news_window else None
 
+    # seed_families (see discovery_search.search_conjunctions' seed_primitives
+    # docstring): restricts which primitives may START a conjunction, NOT
+    # what a conjunction can grow to include - lets one very large timeframe
+    # be searched in several smaller, wall-clock-bounded batches (one per
+    # family group) without narrowing what any single search actually
+    # explores. merge_explored_setups.py unions multiple batches' output
+    # files for the same timeframe back into one.
+    seed_primitives = None
+    if seed_families is not None:
+        pool = base_primitives if base_primitives is not None else PRIMITIVES
+        seed_primitives = [p for p in pool if p.family in seed_families]
+
     _final, n_tested, all_scored = search_conjunctions(
         candles, events, atr_series, discovery_end,
         beam_width=beam_width, max_depth=max_depth, min_depth=min_depth,
         min_start_score=min_start_score, min_improvement=min_improvement,
-        capture_all=True, base_primitives=base_primitives,
+        capture_all=True, base_primitives=base_primitives, seed_primitives=seed_primitives,
     )
 
     # Only genuine multi-primitive conjunctions - a lone primitive was
@@ -228,7 +241,8 @@ def rebuild_all(symbol: str, data_dir: Path, out_dir: Path, timeframes: "list[st
                  rr_ratios: list[float], min_resolved: int, top_n: int,
                  beam_width: int, max_depth: int, min_depth: int,
                  min_start_score: float, min_improvement: float,
-                 technicals_only: bool = False, exclude_news_window: bool = True) -> dict:
+                 technicals_only: bool = False, exclude_news_window: bool = True,
+                 seed_families: "list[str] | None" = None) -> dict:
     candles_dir = data_dir / "candles"
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -262,6 +276,7 @@ def rebuild_all(symbol: str, data_dir: Path, out_dir: Path, timeframes: "list[st
             candles, events, rr_ratios, min_resolved,
             beam_width, max_depth, min_depth, min_start_score, min_improvement,
             technicals_only=technicals_only, exclude_news_window=exclude_news_window,
+            seed_families=seed_families,
         )
         kept = rows[:top_n]
         out_path = out_dir / f"{symbol}_{tf}.json"
@@ -320,17 +335,27 @@ def main():
                               "edge from news-driven moves) - pass this to disable that and score every "
                               "occurrence regardless of nearby news")
     parser.set_defaults(exclude_news_window=True)
+    parser.add_argument("--seed-families", default=None,
+                         help="comma-separated primitive families (e.g. momentum,volatility) - restricts "
+                              "which primitives may START a conjunction (depth-1 seed) so a large timeframe "
+                              "can be searched in several smaller, wall-clock-bounded batches; a seed can "
+                              "still GROW into any family at depth 2+, unaffected by this. Run once per "
+                              "family group with the same --out-dir, then merge_explored_setups.py to "
+                              "combine the batches back into one file per timeframe. Default: no "
+                              "restriction, matches every prior behavior.")
     args = parser.parse_args()
 
     rr_ratios = [float(x) for x in args.rr_ratios.split(",")]
     timeframes = [t.strip() for t in args.timeframes.split(",")] if args.timeframes else None
     data_dir = Path(args.data_dir)
+    seed_families = [f.strip() for f in args.seed_families.split(",")] if args.seed_families else None
 
     with track("explore_setups", path=data_dir / "heartbeats.json"):
         rebuild_all(args.symbol, data_dir, Path(args.out_dir), timeframes, rr_ratios,
                     args.min_resolved, args.top_n, args.beam_width, args.max_depth,
                     args.min_depth, args.min_start_score, args.min_improvement,
-                    technicals_only=args.technicals_only, exclude_news_window=args.exclude_news_window)
+                    technicals_only=args.technicals_only, exclude_news_window=args.exclude_news_window,
+                    seed_families=seed_families)
 
 
 if __name__ == "__main__":

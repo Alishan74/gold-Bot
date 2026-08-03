@@ -120,7 +120,8 @@ def search_conjunctions(candles: pd.DataFrame, events: "pd.DataFrame | None", at
                          min_improvement: float = MIN_IMPROVEMENT,
                          extra_primitives: "list[Primitive] | None" = None,
                          capture_all: bool = False,
-                         base_primitives: "list[Primitive] | None" = None) -> tuple[list[Conjunction], int, list[Conjunction]]:
+                         base_primitives: "list[Primitive] | None" = None,
+                         seed_primitives: "list[Primitive] | None" = None) -> tuple[list[Conjunction], int, list[Conjunction]]:
     """Runs the full beam search. Returns (final_candidates, n_tested,
     all_scored) - `n_tested` is the TOTAL number of distinct conjunctions
     actually scored over the whole run (every starting primitive, every
@@ -151,7 +152,29 @@ def search_conjunctions(candles: pd.DataFrame, events: "pd.DataFrame | None", at
     global one (`extra_primitives` still gets added on top either way) -
     scripts/explore_setups.py uses this for `--technicals-only`, so
     fundamental-family primitives never enter the search at all rather
-    than being filtered out after the fact."""
+    than being filtered out after the fact.
+
+    `seed_primitives`: defaults to None, which seeds the depth-1 beam
+    from the SAME full candidate pool (`base_primitives` + `extra_
+    primitives`) extensions draw from at every depth - exactly the
+    original, always-been-this-way behavior for every existing caller.
+    Passing a list restricts ONLY which primitives are allowed to be a
+    STARTING (depth-1) primitive; depth-2+ extension trials still draw
+    from the full candidate pool regardless, so cross-family combination
+    is completely unaffected - a seed from this restricted list can
+    still grow into a conjunction using any primitive from any family,
+    same as always. This exists purely to let a large search be split
+    into smaller wall-clock-bounded batches (e.g. one run per primitive
+    family as the seed set) without changing what any single seed's own
+    growth explores - depth-2/3 extension still sees every family
+    regardless of which batch a seed came from. NOT identical to one
+    unsplit run, though: each batch keeps its own top `beam_width`
+    depth-1 survivors instead of every batch competing for one shared
+    beam, so unioning several batches' results (dedup by primitive-set+
+    direction, same rule this function's own final dedup already uses)
+    carries MORE depth-1 starting points into extension than a single
+    beam of the same width would have - strictly broader, never
+    narrower, than the unsplit search it stands in for."""
     n_tested = 0
     all_scored: list[Conjunction] = []
     base = base_primitives if base_primitives is not None else PRIMITIVES
@@ -168,8 +191,10 @@ def search_conjunctions(candles: pd.DataFrame, events: "pd.DataFrame | None", at
     }
 
     # Step 1: score every primitive alone, keep survivors as depth-1 beam seeds.
+    # seed_primitives (see docstring) restricts ONLY this loop - extension
+    # trials below always draw from the full all_primitives regardless.
     beam: list[Conjunction] = []
-    for p in all_primitives:
+    for p in (seed_primitives if seed_primitives is not None else all_primitives):
         direction = p.direction_hint  # a lone ambiguous (0-hint) primitive can't be tested standalone without picking a side
         directions_to_try = (1, -1) if direction == 0 else (direction,)
         for d in directions_to_try:

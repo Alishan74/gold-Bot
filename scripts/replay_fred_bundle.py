@@ -41,11 +41,17 @@ def install_replay(bundle_path: Path) -> None:
     for series_id, info in bundle["series_info"].items():
         cache[_cache_key("series", {"series_id": series_id})] = {"seriess": [info] if info else []}
 
+    # release/dates can exceed 1000 rows (e.g. release_id 101 "FOMC Press
+    # Release" has 3739) - fred_client.release_dates() paginates with
+    # offset in steps of 1000 until a page comes back short, so replay
+    # every offset that a real paginated fetch would have requested, each
+    # sliced from the bundle's already-concatenated full list.
     for rid_str, dates in bundle["release_dates"].items():
-        cache[_cache_key("release/dates", {
-            "release_id": int(rid_str), "limit": 1000, "offset": 0,
-            "sort_order": "asc", "include_release_dates_with_no_data": "false",
-        })] = {"release_dates": dates}
+        for offset in range(0, len(dates) + 1, 1000):
+            cache[_cache_key("release/dates", {
+                "release_id": int(rid_str), "limit": 1000, "offset": offset,
+                "sort_order": "asc", "include_release_dates_with_no_data": "false",
+            })] = {"release_dates": dates[offset:offset + 1000]}
 
     for series_id, obs in bundle["series_observations_vintage"].items():
         cache[_cache_key("series/observations", {
