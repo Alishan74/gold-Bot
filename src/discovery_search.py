@@ -60,6 +60,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from atomic_io import atomic_write_text
 from discovery_primitives import PRIMITIVES, Primitive
 from discovery_validation import score_conjunction
 
@@ -236,8 +237,15 @@ def search_conjunctions(candles: pd.DataFrame, events: "pd.DataFrame | None", at
             score_cache = {}
 
     def _flush_checkpoint() -> None:
+        # atomic_write_text (temp file + os.replace) rather than a plain
+        # write_text - a kill mid-write to a plain write_text call can
+        # leave a truncated, unparseable JSON file, which would turn
+        # "resume from checkpoint" into "crash on load, every restart,
+        # forever" - exactly the failure mode this whole mechanism exists
+        # to avoid. See atomic_io.py's own docstring for the same
+        # reasoning applied to every other resumable file in this system.
         if checkpoint_path is not None:
-            checkpoint_path.write_text(json.dumps(score_cache))
+            atomic_write_text(checkpoint_path, json.dumps(score_cache))
 
     # Cache every primitive's raw boolean Series once - independent of
     # which conjunction it ends up in. Uses each Primitive's OWN `.fn`
