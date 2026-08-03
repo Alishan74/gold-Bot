@@ -63,15 +63,19 @@ inventing a bespoke indicator to cover every piece of folklore:
    swept-and-reclaimed the same way liquidity_sweep_low/high tests a
    single level.
 
-Deliberately excluded, same as support_resistance.py's own excluded-list:
-order blocks and breaker blocks. Both need a PERSISTENT, mutable zone
-(the origin candle's range, tracked forward until "mitigated" by a first
-retest) rather than a single boolean condition per candle - a genuinely
-different kind of object than every other pattern in this codebase, which
-are all stateless per-candle boolean tests. That's a real feature, not a
-missing one-liner, and deserves its own honest design (and its own
-correctness review) rather than a rushed vectorized approximation bolted
-onto this module.
+5. Order blocks (`near_bullish_order_block` / `near_bearish_order_block`)
+   and premium/discount zones (`range_position`, thresholded into
+   `smc_discount_zone`/`smc_premium_zone`) - originally excluded here
+   (see prior revisions) as needing a PERSISTENT, mutable zone rather
+   than a single stateless per-candle boolean, unlike everything else in
+   this module. Implemented now, with the ambiguity in both concepts'
+   definitions (no single agreed-upon standard exists in retail ICT
+   material for either) made explicit in each function's own docstring
+   rather than silently picking one convention and presenting it as THE
+   definition. Breaker blocks remain excluded - a breaker block is
+   specifically a FAILED, invalidated order block re-purposed for the
+   opposite direction, meaningfully more state to track correctly than
+   order_block_zone's single active-zone-per-direction model handles.
 
 All primitives are exposed standalone (so combo_patterns.py can pair any
 one of them with a pattern from another family, e.g. a candlestick
@@ -264,6 +268,80 @@ def eq_low_sweep(df: pd.DataFrame) -> pd.Series:
     return is_equal & swept & reclaimed
 
 
+def order_block_zone(df: pd.DataFrame, bullish: bool) -> tuple[pd.Series, pd.Series]:
+    """(zone_low, zone_high): the ACTIVE order block's price range, as of
+    each candle - persistent/mutable, unlike every other function in this
+    module, which is exactly why this module's own docstring originally
+    excluded order blocks. Implemented now at explicit user request
+    ("no constraints... SMC ICT whatever you want") with ONE reasonable,
+    fully mechanical definition among several real ones retail ICT
+    material uses (no single agreed-upon standard exists, same ambiguity
+    this module's docstring already flags for premium/discount below):
+
+    A bullish order block is the LAST opposite-colored (bearish) candle
+    immediately before a Break of Structure (bos_bullish) - the
+    institutional "footprint" candle right before the impulsive move that
+    broke structure. Its [low, high] range becomes a zone traders watch
+    for price to return to (mitigation) as a lower-risk continuation
+    entry. The zone is set at each BOS event (from whichever bearish
+    candle most recently preceded it) and PERSISTS - unlike this
+    codebase's other stateless per-candle booleans - until superseded by
+    the next BOS's own new order block. Bearish mirror: last opposite
+    (bullish) candle before a bos_bearish.
+
+    Look-ahead safety: the "last opposite candle before this BOS" lookup
+    is `.ffill().shift(1)` - the candle used is always strictly BEFORE
+    the evaluation row, and the zone itself only updates on rows where
+    the BOS condition is already true (itself already edge-triggered,
+    look-ahead-safe by construction - see bos_bullish/bos_bearish)."""
+    close, open_, high, low = df["close"], df["open"], df["high"], df["low"]
+    bos = bos_bullish(df) if bullish else bos_bearish(df)
+    opposite_candle = (close < open_) if bullish else (close > open_)
+
+    last_opp_high = high.where(opposite_candle).ffill().shift(1)
+    last_opp_low = low.where(opposite_candle).ffill().shift(1)
+
+    zone_high = last_opp_high.where(bos).ffill()
+    zone_low = last_opp_low.where(bos).ffill()
+    return zone_low, zone_high
+
+
+def near_bullish_order_block(df: pd.DataFrame) -> pd.Series:
+    """Price has returned into the most recent active bullish order
+    block's [low, high] range (see order_block_zone) - the classic ICT
+    "wait for mitigation" continuation entry, rather than chasing the
+    original breakout candle itself."""
+    zone_low, zone_high = order_block_zone(df, bullish=True)
+    close = df["close"]
+    return (close >= zone_low) & (close <= zone_high) & zone_low.notna()
+
+
+def near_bearish_order_block(df: pd.DataFrame) -> pd.Series:
+    """Mirror of near_bullish_order_block for bearish order blocks."""
+    zone_low, zone_high = order_block_zone(df, bullish=False)
+    close = df["close"]
+    return (close >= zone_low) & (close <= zone_high) & zone_low.notna()
+
+
+def range_position(df: pd.DataFrame, window: int) -> pd.Series:
+    """0.0 = price sits at the trailing `window`-candle range's LOW,
+    1.0 = at its HIGH - ICT's premium/discount framing: below the
+    range's midpoint (0.5) is a "discount" (favor longs, price is
+    "cheap" relative to its recent range), above is a "premium" (favor
+    shorts). Like order blocks above, "premium/discount" has no single
+    universally-agreed range definition in retail ICT material (some use
+    the current swing leg, some a fixed lookback, some a session's own
+    range) - this uses a fixed trailing lookback window for the same
+    reason discovery_primitives.py's own docstring gives for bounded,
+    parameterized primitives generally: a small fixed grid the search can
+    evaluate, not an unbounded/ambiguous continuum. Range of exactly zero
+    (flat market) divides by zero -> NaN, correctly "undefined," not a
+    fabricated 0 or 1."""
+    high = df["high"].rolling(window).max()
+    low = df["low"].rolling(window).min()
+    return (df["close"] - low) / (high - low)
+
+
 def smc_bullish_sweep_fvg(df: pd.DataFrame) -> pd.Series:
     """The combined "smart money" setup: the SAME candle that sweeps a
     swing low (liquidity_sweep_low) is ALSO the third, gap-confirming
@@ -301,6 +379,10 @@ SMC_PATTERNS = {
     "smc_choch_bearish": choch_bearish,
     "smc_eq_high_sweep": eq_high_sweep,
     "smc_eq_low_sweep": eq_low_sweep,
+    "smc_near_bullish_order_block": near_bullish_order_block,
+    "smc_near_bearish_order_block": near_bearish_order_block,
+    "smc_discount_zone": lambda df: range_position(df, 50) < 0.3,
+    "smc_premium_zone": lambda df: range_position(df, 50) > 0.7,
 }
 
 SMC_PATTERN_NAMES = list(SMC_PATTERNS)

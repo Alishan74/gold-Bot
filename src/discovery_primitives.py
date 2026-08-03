@@ -52,6 +52,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 
+import smc_patterns as _smc
 from patterns import macd as _macd
 from patterns import rsi as _rsi
 from patterns import sma as _sma
@@ -384,6 +385,64 @@ _register("seasonality_diwali_window", "seasonality", 0,
           (lambda df, ev: _month_in(df, {10, 11})))
 _register("seasonality_golden_window", "seasonality", 0,
           (lambda df, ev: _month_in(df, {11, 12, 1, 2})))
+
+
+# ---- smc family (Smart Money Concepts / ICT) -----------------------------------
+# smc_patterns.py's functions were, until now, only reachable through the
+# SEPARATE hand-picked pipeline (build_pattern_library.py's
+# compute_pattern_flags()) - never through THIS search, so discover_patterns.py
+# / explore_setups.py have never once been able to combine a liquidity sweep,
+# FVG, BOS/CHoCH, or order block with anything from another family. Wired in
+# here at explicit user request for an unconstrained, any-methodology search.
+for _name, _fn, _hint in [
+    ("smc_liquidity_sweep_low", _smc.liquidity_sweep_low, +1),
+    ("smc_liquidity_sweep_high", _smc.liquidity_sweep_high, -1),
+    ("smc_fvg_bullish", _smc.fvg_bullish, +1),
+    ("smc_fvg_bearish", _smc.fvg_bearish, -1),
+    ("smc_bos_bullish", _smc.bos_bullish, +1),
+    ("smc_bos_bearish", _smc.bos_bearish, -1),
+    ("smc_choch_bullish", _smc.choch_bullish, +1),
+    ("smc_choch_bearish", _smc.choch_bearish, -1),
+    ("smc_eq_high_sweep", _smc.eq_high_sweep, -1),
+    ("smc_eq_low_sweep", _smc.eq_low_sweep, +1),
+    ("smc_bullish_sweep_fvg", _smc.smc_bullish_sweep_fvg, +1),
+    ("smc_bearish_sweep_fvg", _smc.smc_bearish_sweep_fvg, -1),
+    ("smc_near_bullish_order_block", _smc.near_bullish_order_block, +1),
+    ("smc_near_bearish_order_block", _smc.near_bearish_order_block, -1),
+]:
+    _register(_name, "smc", _hint, (lambda df, ev, f=_fn: f(df)))
+
+for _window in (20, 50, 100):
+    _register(f"smc_discount_zone_{_window}", "smc", +1,
+              (lambda df, ev, w=_window: _smc.range_position(df, w) < 0.3))
+    _register(f"smc_premium_zone_{_window}", "smc", -1,
+              (lambda df, ev, w=_window: _smc.range_position(df, w) > 0.7))
+
+
+# ---- ict_timing family (killzones) ---------------------------------------------
+# ICT's "killzones": specific intraday windows retail ICT material claims
+# see disproportionate institutional volume/volatility - converted from the
+# stated New York local times the same DST-safe way session_patterns.py's
+# own SESSIONS already are (not a fixed UTC offset, which would be wrong
+# half the year).
+ICT_KILLZONES = {
+    "london_kz": {"tz": "America/New_York", "open": (2, 0), "close": (5, 0)},
+    "ny_am_kz": {"tz": "America/New_York", "open": (7, 0), "close": (10, 0)},
+}
+
+def _killzone_active(candles: pd.DataFrame, cfg: dict) -> pd.Series:
+    ts = pd.to_datetime(candles["timestamp"])
+    ts_utc = ts.dt.tz_localize(UTC) if ts.dt.tz is None else ts.dt.tz_convert(UTC)
+    local = ts_utc.dt.tz_convert(ZoneInfo(cfg["tz"]))
+    local_minutes = local.dt.hour * 60 + local.dt.minute
+    open_h, open_m = cfg["open"]
+    close_h, close_m = cfg["close"]
+    open_min, close_min = open_h * 60 + open_m, close_h * 60 + close_m
+    return (local_minutes >= open_min) & (local_minutes < close_min)
+
+for _name, _cfg in ICT_KILLZONES.items():
+    _register(f"ict_{_name}_active", "ict_timing", 0,
+              (lambda df, ev, c=_cfg: _killzone_active(df, c)))
 
 
 # ---- session family -----------------------------------------------------------
